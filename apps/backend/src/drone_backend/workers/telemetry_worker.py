@@ -1,0 +1,2 @@
+class TelemetryWorker:
+    pass

@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drone-frontend
+  namespace: drone-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: drone-frontend
+  template:
+    metadata:
+      labels:
+        app: drone-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: drone-frontend:latest
+        ports:
+        - containerPort: 3000

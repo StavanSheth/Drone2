@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TelemetryData",
+  "type": "object",
+  "properties": {
+    "lat": { "type": "number" },
+    "lng": { "type": "number" },
+    "hdop": { "type": "number" },
+    "moves_left": { "type": "integer" }
+  },
+  "required": ["lat", "lng"]
+}

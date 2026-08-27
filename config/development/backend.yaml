@@ -1,0 +1,10 @@
+server:
+  host: 0.0.0.0
+  port: 8000
+  reload: true
+serial:
+  port: COM3
+  baud: 115200
+ai:
+  ollama_url: http://localhost:11434
+  model: llama3.2:1b

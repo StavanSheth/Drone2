@@ -1,0 +1,13 @@
+{
+  "name": "drone-platform-root",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "python scripts/dev/start_all.py",
+    "dev:backend": "python scripts/dev/start_backend.py",
+    "dev:frontend": "python scripts/dev/start_frontend.py",
+    "build": "cd apps/frontend && npm run build",
+    "lint": "cd apps/frontend && npm run lint",
+    "test": "pytest apps/backend/tests"
+  }
+}

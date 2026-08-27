@@ -1,0 +1,2 @@
+class MediaWorker:
+    pass

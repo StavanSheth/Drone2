@@ -1,0 +1,4 @@
+confidence_threshold: 0.40
+iou_threshold: 0.45
+max_detections: 300
+imgsz: 640

@@ -1,0 +1,10 @@
+groups:
+- name: drone_alerts
+  rules:
+  - alert: DroneBatteryLow
+    expr: drone_battery_percentage < 20
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: Drone battery critical

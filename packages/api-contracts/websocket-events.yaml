@@ -1,0 +1,8 @@
+version: 1.0.0
+events:
+  telemetry_update:
+    type: object
+    properties:
+      lat: { type: number }
+      lng: { type: number }
+      hdop: { type: number }

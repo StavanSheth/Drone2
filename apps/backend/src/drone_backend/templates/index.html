@@ -1,0 +1,2826 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trinetra | Premium Drone Control</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700&family=Rajdhani:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        :root {
+            /* Color Palette - Dark Mode (Default) */
+            --bg-dark: #0f1115;
+            --bg-panel: rgba(22, 25, 30, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-shine: rgba(255, 255, 255, 0.03);
+
+            --primary-accent: #00d2ff;
+            --secondary-accent: #00ff9d;
+            --warning-color: #ff9d00;
+            --danger-color: #ff4d4d;
+            --text-main: #ffffff;
+            --text-muted: #8b9bb4;
+
+            --font-heading: 'Rajdhani', sans-serif;
+            --font-body: 'Outfit', sans-serif;
+
+            --panel-radius: 16px;
+            --transition-speed: 0.3s;
+        }
+
+        [data-theme="light"] {
+            --bg-dark: #f0f2f5;
+            --bg-panel: rgba(255, 255, 255, 0.65);
+            --glass-border: rgba(0, 0, 0, 0.05);
+            --glass-shine: rgba(255, 255, 255, 0.5);
+
+            --primary-accent: #007acc;
+            --secondary-accent: #00cc7a;
+            --text-main: #1a1d21;
+            --text-muted: #5e6b7c;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: var(--font-body);
+            min-height: 100vh;
+            overflow-x: hidden;
+            overflow-y: auto;
+            /* Allow global scrolling */
+            transition: background-color var(--transition-speed);
+        }
+
+        /* Background Canvas */
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0.6;
+            /* Slight fade for subtle effect */
+        }
+
+        .app-container {
+            position: relative;
+            z-index: 1;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        /* Styling Classes */
+        .glass-panel {
+            background: var(--bg-panel);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--panel-radius);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .glass-input {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(5px);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+        }
+
+        h1,
+        h2,
+        h3 {
+            font-family: var(--font-heading);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 24px;
+            height: 70px;
+            flex-shrink: 0;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            font-size: 24px;
+            color: var(--primary-accent);
+        }
+
+        .brand-text h1 {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: var(--secondary-accent);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--secondary-accent);
+            margin-left: 8px;
+        }
+
+        .top-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .vertical-divider {
+            width: 1px;
+            height: 30px;
+            background: var(--glass-border);
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .nav-label {
+            font-size: 8px;
+            font-weight: 700;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+        }
+
+        /* Mini Switch */
+        .switch-mini {
+            position: relative;
+            display: inline-block;
+            width: 36px;
+            height: 20px;
+        }
+
+        .switch-mini input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider-mini {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .4s;
+        }
+
+        .slider-mini.round {
+            border-radius: 34px;
+        }
+
+        .slider-mini.round:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider-mini {
+            background-color: var(--secondary-accent);
+        }
+
+        input:checked+.slider-mini:before {
+            transform: translateX(16px);
+        }
+
+        /* Nav Icon Button */
+        .btn-nav-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--primary-accent);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .btn-nav-icon:hover {
+            background: var(--primary-accent);
+            color: #000;
+            box-shadow: 0 0 15px var(--primary-accent);
+        }
+
+        .language-selector select {
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            padding: 8px 12px;
+            font-family: var(--font-body);
+            cursor: pointer;
+            outline: none;
+        }
+
+        .language-selector select option {
+            background: var(--bg-dark);
+            /* Ensure dropdown is readable */
+            color: var(--text-main);
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: var(--font-heading);
+            font-weight: 600;
+        }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 2px solid var(--primary-accent);
+        }
+
+        /* Theme Switcher */
+        .theme-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+        }
+
+        .theme-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .4s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 5px;
+            font-size: 12px;
+        }
+
+        .slider.round {
+            border-radius: 34px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .slider.round:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 2px;
+            background-color: var(--primary-accent);
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(23px);
+        }
+
+        /* Dashboard Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 280px 1fr 300px;
+            gap: 20px;
+            flex-grow: 1;
+            min-height: 0;
+            /* Important for scroll */
+        }
+
+        /* Panels */
+        .left-panel,
+        .right-panel,
+        .center-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            height: 100%;
+            /* Restore height to fill grid cell */
+        }
+
+        .center-panel {
+            gap: 12px;
+            /* Slightly reduced gap */
+        }
+
+        .glass-panel.left-panel,
+        .glass-panel.right-panel,
+        .center-panel {
+            height: auto;
+            /* Let content dictate height */
+            overflow: visible;
+        }
+
+        .glass-panel.left-panel,
+        .glass-panel.right-panel {
+            padding: 15px;
+        }
+
+
+        .glass-panel.left-panel::-webkit-scrollbar,
+        .glass-panel.right-panel::-webkit-scrollbar,
+        .center-panel::-webkit-scrollbar {
+            display: none;
+        }
+
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 10px;
+            margin-bottom: 5px;
+        }
+
+        .panel-header h3 {
+            font-size: 16px;
+            color: var(--text-muted);
+        }
+
+        .accent-icon {
+            color: var(--primary-accent);
+        }
+
+        /* Widgets */
+        .widget {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.02);
+        }
+
+        .widget-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        .widget-header .val {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        /* Circular Gauges (Alt/Speed) */
+        .alt-speed {
+            display: flex;
+            justify-content: space-around;
+        }
+
+        .gauge-container {
+            width: 80px;
+            position: relative;
+        }
+
+        .circular-chart {
+            display: block;
+            margin: 0 auto;
+            max-width: 100%;
+        }
+
+        .circle-bg {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.1);
+            stroke-width: 2.8;
+        }
+
+        .circle {
+            fill: none;
+            stroke-width: 2.8;
+            stroke-linecap: round;
+            stroke: var(--primary-accent);
+            animation: progress 1s ease-out forwards;
+        }
+
+        .gauge-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            line-height: 1;
+        }
+
+        .gauge-text .value {
+            display: block;
+            font-size: 18px;
+            font-weight: 700;
+            font-family: var(--font-heading);
+        }
+
+        .gauge-text .unit {
+            display: block;
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
+        .gauge-text .label {
+            display: block;
+            font-size: 9px;
+            color: var(--primary-accent);
+            margin-top: 2px;
+        }
+
+        /* Battery */
+        .battery-bar-container {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            margin-bottom: 5px;
+            overflow: hidden;
+        }
+
+        .battery-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--secondary-accent), #4caf50);
+            border-radius: 4px;
+        }
+
+        .battery-details {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* GPS Mini */
+        .gps-mini .map-placeholder {
+            height: 120px;
+            background: radial-gradient(circle at center, rgba(0, 210, 255, 0.1) 0%, transparent 70%),
+                rgba(0, 0, 0, 0.2) url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.1' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='3'/%3E%3Ccircle cx='13' cy='13' r='3'/%3E%3C/g%3E%3C/svg%3E");
+            border-radius: 8px;
+            position: relative;
+            border: 1px solid var(--glass-border);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .drone-marker {
+            width: 12px;
+            height: 12px;
+            background: var(--primary-accent);
+            border: 2px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--primary-accent);
+            position: relative;
+            z-index: 2;
+        }
+
+        .map-placeholder .coords {
+            position: absolute;
+            bottom: 5px;
+            left: 5px;
+            font-size: 10px;
+            font-family: monospace;
+            color: var(--text-main);
+            background: rgba(0, 0, 0, 0.5);
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        .signal-bars {
+            display: flex;
+            gap: 2px;
+            align-items: flex-end;
+            height: 12px;
+        }
+
+        .signal-bars .bar {
+            width: 3px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .signal-bars .bar:nth-child(1) {
+            height: 40%;
+        }
+
+        .signal-bars .bar:nth-child(2) {
+            height: 60%;
+        }
+
+        .signal-bars .bar:nth-child(3) {
+            height: 80%;
+        }
+
+        .signal-bars .bar:nth-child(4) {
+            height: 100%;
+        }
+
+        .signal-bars .bar:nth-child(5) {
+            height: 100%;
+        }
+
+        .signal-bars .bar.active {
+            background: var(--secondary-accent);
+        }
+
+        /* Center Panel - Live Feed */
+
+        .live-feed-container {
+            background: #000;
+            flex: 0.8;
+            /* Reduced from 2 */
+            min-height: 40px;
+            /* Reduced to absolute minimum */
+            border-radius: var(--panel-radius);
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+
+        /* Log Widget (New) */
+        .log-widget {
+            flex: 0.4;
+            /* Reduced from 0.8 */
+            min-height: 20px;
+            /* Micro compact */
+            padding: 5px;
+            /* Extremely compact padding */
+            background: rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .log-widget .widget-header-row {
+            margin-bottom: 2px;
+        }
+
+        .log-console {
+            font-family: monospace;
+            font-size: 10px;
+            /* Smaller font */
+            color: var(--text-muted);
+            overflow-y: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            gap: 1px;
+            /* Minimal gap */
+            height: 100%;
+        }
+
+        .log-line .time {
+            color: #666;
+            margin-right: 5px;
+        }
+
+        .log-line .info {
+            color: var(--primary-accent);
+        }
+
+        .log-line .success {
+            color: var(--secondary-accent);
+        }
+
+        .log-line .warn {
+            color: var(--warning-color);
+        }
+
+        /* Weather Widget (New) */
+        .weather-widget .weather-grid {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .wind-visual {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .arrow-circle {
+            width: 32px;
+            height: 32px;
+            border: 1px solid var(--glass-border);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-main);
+        }
+
+        .wind-val {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .wind-val .val {
+            font-size: 18px;
+            font-weight: 700;
+            font-family: var(--font-heading);
+        }
+
+        .wind-val .dir {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
+        .temp-humidity {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .temp-humidity span {
+            color: var(--text-main);
+            font-weight: 600;
+            margin-left: 5px;
+        }
+
+        /* Alert Widget (New) */
+        .alert-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: rgba(255, 77, 77, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 77, 77, 0.2);
+        }
+
+        .alert-icon {
+            font-size: 18px;
+            color: var(--danger-color);
+        }
+
+        .alert-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .alert-title {
+            font-weight: 600;
+            font-size: 13px;
+            color: #ffcccc;
+        }
+
+        .alert-prob {
+            font-size: 10px;
+            color: var(--danger-color);
+        }
+
+        .live-feed-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.8;
+        }
+
+        .feed-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 2;
+            background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6) 0%, transparent 20%, transparent 80%, rgba(0, 0, 0, 0.6) 100%);
+        }
+
+        .rec-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            color: #fff;
+            font-family: var(--font-heading);
+        }
+
+        .red-dot {
+            width: 10px;
+            height: 10px;
+            background: var(--danger-color);
+            border-radius: 50%;
+            animation: blink 2s infinite;
+        }
+
+        @keyframes blink {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .hud-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .crosshair {
+            width: 40px;
+            height: 40px;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            position: relative;
+        }
+
+        .crosshair:after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.8);
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+        }
+
+        .hud-data {
+            display: flex;
+            justify-content: space-between;
+            color: #fff;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .accent-text {
+            color: var(--secondary-accent);
+        }
+
+        /* Automation Panel */
+        .automation-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .auto-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .icon-box {
+            width: 45px;
+            height: 45px;
+            background: rgba(0, 210, 255, 0.1);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: var(--primary-accent);
+        }
+
+        .subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .toggle-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* Switch Toggle */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 28px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider-toggle {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .4s;
+        }
+
+        .slider-toggle.round {
+            border-radius: 34px;
+        }
+
+        .slider-toggle.round:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider-toggle {
+            background-color: var(--secondary-accent);
+        }
+
+        input:checked+.slider-toggle:before {
+            transform: translateX(22px);
+        }
+
+        .status-text {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--secondary-accent);
+            letter-spacing: 1px;
+        }
+
+        /* Right Panel - Sensors */
+        .sensor-card {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .sensor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .big-num {
+            font-family: var(--font-heading);
+            font-size: 32px;
+            font-weight: 700;
+        }
+
+        .pct {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-left: 2px;
+        }
+
+        /* Linear Gauge */
+        .pro-gauge .bar-bg {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+
+        .pro-gauge .bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+
+        .val-display.warning {
+            color: var(--warning-color);
+        }
+
+        .sensor-status {
+            font-size: 12px;
+            padding: 4px 8px;
+            background: rgba(255, 157, 0, 0.1);
+            color: var(--warning-color);
+            border-radius: 4px;
+            align-self: flex-start;
+        }
+
+        /* pH Visual */
+        .ph-visual {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .ph-scale {
+            height: 8px;
+            background: linear-gradient(90deg, #ff4d4d, #ffff00, #4caf50, #00d2ff);
+            /* Rough pH gradient */
+            border-radius: 4px;
+            position: relative;
+        }
+
+        .ph-scale .indicator {
+            position: absolute;
+            top: -2px;
+            width: 4px;
+            height: 12px;
+            background: #fff;
+            border: 1px solid #000;
+            border-radius: 2px;
+        }
+
+        .ph-val {
+            text-align: center;
+        }
+
+        .sub-label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Tank Animation */
+        .tank-visual {
+            display: flex;
+            align-items: flex-end;
+            gap: 15px;
+        }
+
+        .tank-container {
+            width: 30px;
+            height: 60px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            position: relative;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .liquid {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(0, 210, 255, 0.6);
+            transition: height 0.5s ease;
+            box-shadow: 0 0 10px rgba(0, 210, 255, 0.3);
+        }
+
+        /* New Graph Widgets */
+        .graph-widget {
+            padding: 4px;
+            /* Extremely compact padding */
+            display: flex;
+            flex-direction: column;
+            flex: 0.3;
+            /* Reduced flex */
+            min-height: 40px;
+            /* Bare minimum height */
+        }
+
+        .graph-widget .widget-header-row {
+            margin-bottom: 2px;
+            /* Tight header margin */
+        }
+
+        .widget-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .live-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--secondary-accent);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--secondary-accent);
+        }
+
+        #spectralCanvas {
+            width: 100%;
+            height: 100%;
+            flex-grow: 1;
+        }
+
+        .radar-widget {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 220px;
+            position: relative;
+            padding-bottom: 25px;
+            /* space for label */
+        }
+
+        #radarCanvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .radar-label {
+            position: absolute;
+            bottom: 10px;
+            font-size: 10px;
+            color: var(--primary-accent);
+            letter-spacing: 2px;
+        }
+
+        /* Button (Removed global style for genReportBtn since it's now in navbar, but keeping class if needed) */
+        .btn-primary-glow {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, var(--primary-accent), #0056b3);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-family: var(--font-heading);
+            font-weight: 700;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 20px rgba(0, 210, 255, 0.3);
+        }
+
+        .btn-primary-glow:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(0, 210, 255, 0.5);
+        }
+
+        @media (max-width: 1100px) {
+            .dashboard-grid {
+                grid-template-columns: 260px 1fr;
+            }
+
+            .right-panel {
+                grid-column: span 2;
+                flex-direction: row;
+                overflow-x: auto;
+            }
+
+            .widget {
+                min-width: 200px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                display: flex;
+                flex-direction: column;
+            }
+
+            .top-bar {
+                padding: 0 16px;
+            }
+
+            .top-controls {
+                gap: 10px;
+            }
+
+            .brand-text h1 {
+                font-size: 16px;
+            }
+        }
+
+        /* AI Widget Styles */
+        .ai-yield-widget .yield-meter {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .yield-circle {
+            width: 70px;
+            height: 70px;
+            position: relative;
+        }
+
+        .circular-chart-ai {
+            display: block;
+            margin: 0 auto;
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .circle-ai {
+            fill: none;
+            stroke: var(--secondary-accent);
+            stroke-width: 2.8;
+            stroke-linecap: round;
+            animation: progress 1.5s ease-out forwards;
+            filter: drop-shadow(0 0 4px var(--secondary-accent));
+        }
+
+        .ai-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ai-val {
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .ai-label {
+            font-size: 7px;
+            color: var(--secondary-accent);
+        }
+
+        .ai-stats {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-muted);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 2px;
+        }
+
+        .stat-row .stat-val {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                height: auto;
+                overflow-y: auto;
+            }
+
+            .app-container {
+                height: auto;
+                overflow: visible;
+            }
+
+            .dashboard-grid {
+                height: auto;
+            }
+
+            .left-panel,
+            .right-panel,
+            .center-panel {
+                height: auto;
+                overflow: visible;
+            }
+        }
+
+        /* Record Button Styles */
+        .btn-record {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            font-family: var(--font-heading);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(4px);
+            text-transform: uppercase;
+        }
+
+        .btn-record i {
+            color: #fff;
+            font-size: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-record:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .btn-record.recording {
+            background: rgba(255, 77, 77, 0.2);
+            border-color: var(--danger-color);
+            color: var(--danger-color);
+            box-shadow: 0 0 15px rgba(255, 77, 77, 0.4);
+        }
+
+        .btn-record.recording i {
+            color: var(--danger-color);
+            animation: blink 1s infinite alternate;
+        }
+
+        /* Chatbot Styles */
+        .chatbot-fab {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary-accent), #0056b3);
+            color: #fff;
+            border: none;
+            box-shadow: 0 4px 15px rgba(0, 210, 255, 0.4);
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 1000;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .chatbot-fab:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(0, 210, 255, 0.6);
+        }
+
+        .chat-window {
+            position: fixed;
+            bottom: 100px;
+            right: 30px;
+            width: 350px;
+            height: 500px;
+            display: flex;
+            flex-direction: column;
+            z-index: 999;
+            transform-origin: bottom right;
+            transform: scale(0);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+            pointer-events: none;
+            /* Prevent clicks when hidden */
+        }
+
+        .chat-window.active {
+            transform: scale(1);
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .chat-header {
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: var(--font-heading);
+            font-weight: 700;
+            color: var(--primary-accent);
+        }
+
+        .chat-controls button {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            margin-left: 5px;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+
+        .chat-controls button:hover {
+            color: #fff;
+        }
+
+        .chat-body {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .chat-body::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .chat-body::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        .chat-message {
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            max-width: 80%;
+            line-height: 1.4;
+            position: relative;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .chat-message.bot {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+
+        .chat-message.user {
+            background: rgba(0, 210, 255, 0.15);
+            border: 1px solid rgba(0, 210, 255, 0.3);
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+
+        .msg-time {
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            text-align: right;
+        }
+
+        .chat-input-area {
+            padding: 15px;
+            border-top: 1px solid var(--glass-border);
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 8px 15px;
+            color: #fff;
+            font-family: var(--font-body);
+            outline: none;
+        }
+
+        .chat-input-area input:focus {
+            border-color: var(--primary-accent);
+        }
+
+        .chat-input-area button {
+            background: var(--primary-accent);
+            border: none;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            color: #000;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+
+        .chat-input-area button:hover {
+            transform: scale(1.1);
+        }
+
+        /* Fullscreen Modal */
+        .chat-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2000;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(5px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .chat-modal.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .chat-modal-content {
+            width: 80%;
+            height: 80%;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 50px rgba(0, 210, 255, 0.15);
+            border: 1px solid rgba(0, 210, 255, 0.3);
+        }
+
+        .modal-header {
+            background: rgba(0, 210, 255, 0.05);
+            padding: 20px 30px;
+        }
+
+        .chat-title.huge {
+            font-size: 24px;
+        }
+
+        .status-badge {
+            font-size: 10px;
+            background: var(--secondary-accent);
+            color: #000;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+
+        .close-modal-btn {
+            background: transparent;
+            border: 1px solid var(--glass-border);
+            color: var(--text-muted);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: var(--font-heading);
+            transition: all 0.3s;
+        }
+
+        .close-modal-btn:hover {
+            border-color: var(--primary-accent);
+            color: var(--primary-accent);
+        }
+
+        .modal-body {
+            padding: 30px;
+            font-size: 16px;
+        }
+
+        .modal-body .chat-message {
+            max-width: 60%;
+            padding: 15px 20px;
+            font-size: 15px;
+        }
+
+        .modal-input {
+            padding: 20px 30px;
+        }
+
+        .modal-input input {
+            font-size: 16px;
+            padding: 12px 20px;
+        }
+
+        .modal-input button {
+            width: auto;
+            height: auto;
+            padding: 10px 25px;
+            border-radius: 8px;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--primary-accent), #0056b3);
+            color: #fff;
+            gap: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 3D Background Container -->
+    <div id="canvas-container"></div>
+
+    <div class="app-container">
+        <!-- Top Navigation Bar -->
+        <header class="top-bar glass-panel">
+            <div class="brand">
+                <div class="logo-icon"><i class="fa-solid fa-drone"></i></div>
+                <div class="brand-text">
+                    <h1 data-i18n="brandName">Trinetra</h1>
+                    <span class="status-indicator online"></span>
+                </div>
+            </div>
+
+            <div class="top-controls">
+                <!-- New Navbar Controls -->
+                <div class="nav-actions">
+                    <div class="nav-item">
+                        <span class="nav-label" data-i18n="automation">AUTO</span>
+                        <label class="switch-mini">
+                            <input type="checkbox" checked id="autoWaterToggle">
+                            <span class="slider-mini round"></span>
+                        </label>
+                    </div>
+
+                    <button class="btn-nav-icon" id="genReportBtn" title="Generate Report">
+                        <i class="fa-solid fa-file-export"></i>
+                    </button>
+                </div>
+
+                <div class="vertical-divider"></div>
+
+                <div class="theme-switch-wrapper">
+                    <label class="theme-switch" for="checkbox">
+                        <input type="checkbox" id="checkbox" />
+                        <div class="slider round">
+                            <i class="fas fa-sun"></i>
+                            <i class="fas fa-moon"></i>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="language-selector glass-input">
+                    <select id="langSelect">
+                        <option value="en">🇬🇧 English</option>
+                        <option value="hi">🇮🇳 हिंदी</option>
+                        <option value="mr">🚩 मराठी</option>
+                    </select>
+                </div>
+
+                <div class="user-profile">
+                    <img src="https://ui-avatars.com/api/?name=Pilot+One&background=random" alt="Pilot" class="avatar">
+                    <span class="pilot-name">CMD. REYNOLDS</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Grid -->
+        <main class="dashboard-grid">
+
+            <!-- Left Column: Flight Data -->
+            <aside class="left-panel glass-panel">
+                <div class="panel-header">
+                    <h3 data-i18n="flightTelemetry">FLIGHT TELEMETRY</h3>
+                    <i class="fa-solid fa-chart-line accent-icon"></i>
+                </div>
+
+                <div class="widget alt-speed">
+                    <div class="gauge-container">
+                        <div class="circular-chart" data-percent="65" id="altGauge">
+                            <svg viewBox="0 0 36 36" class="circular-chart-svg">
+                                <path class="circle-bg"
+                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                <path class="circle" stroke-dasharray="65, 100"
+                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            </svg>
+                            <div class="gauge-text">
+                                <span class="value">124</span>
+                                <span class="unit">m</span>
+                                <span class="label" data-i18n="altitude">ALT</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="gauge-container">
+                        <div class="circular-chart" data-percent="42" id="speedGauge">
+                            <svg viewBox="0 0 36 36" class="circular-chart-svg">
+                                <path class="circle-bg"
+                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                <path class="circle" stroke-dasharray="42, 100"
+                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            </svg>
+                            <div class="gauge-text">
+                                <span class="value">18</span>
+                                <span class="unit">km/h</span>
+                                <span class="label" data-i18n="speed">SPD</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="widget battery-status">
+                    <div class="widget-header">
+                        <span data-i18n="battery">BATTERY</span>
+                        <span class="val">87%</span>
+                    </div>
+                    <div class="battery-bar-container">
+                        <div class="battery-bar" style="width: 87%;"></div>
+                    </div>
+                    <div class="battery-details">
+                        <span>22.4V</span>
+                        <span>45°C</span>
+                    </div>
+                </div>
+
+                <div class="widget gps-mini">
+                    <div class="widget-header">
+                        <span data-i18n="gpsSignal">GPS SIGNAL</span>
+                        <div class="signal-bars">
+                            <div class="bar active"></div>
+                            <div class="bar active"></div>
+                            <div class="bar active"></div>
+                            <div class="bar active"></div>
+                            <div class="bar"></div>
+                        </div>
+                    </div>
+                    <div class="map-placeholder">
+                        <div class="grid-lines"></div>
+                        <div class="drone-marker"></div>
+                        <span class="coords">LAT: 19.0760 | LNG: 72.8777</span>
+                    </div>
+                </div>
+
+                <!-- New Widget: Weather/Wind -->
+                <div class="widget weather-widget">
+                    <div class="widget-header">
+                        <span data-i18n="weather">WEATHER</span>
+                        <i class="fa-solid fa-wind"></i>
+                    </div>
+                    <div class="weather-grid">
+                        <div class="wind-visual">
+                            <div class="arrow-circle">
+                                <i class="fa-solid fa-arrow-up" id="windArrow"></i>
+                            </div>
+                            <div class="wind-val">
+                                <span class="val" id="windSpeed">12</span> <span class="unit">km/h</span>
+                                <span class="dir">NW</span>
+                            </div>
+                        </div>
+                        <div class="temp-humidity">
+                            <div><i class="fa-solid fa-temperature-half"></i> <span>28°C</span></div>
+                            <div><i class="fa-solid fa-droplet"></i> <span>45%</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- NEW: AI Yield Prediction Widget -->
+                <div class="widget ai-yield-widget">
+                    <div class="widget-header">
+                        <span data-i18n="aiPrediction">AI YIELD PREDICTION</span>
+                        <i class="fa-solid fa-brain"></i>
+                    </div>
+                    <div class="yield-meter">
+                        <div class="yield-circle">
+                            <svg viewBox="0 0 36 36" class="circular-chart-ai">
+                                <path class="circle-bg"
+                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                <path class="circle-ai" stroke-dasharray="92, 100"
+                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            </svg>
+                            <div class="ai-text">
+                                <span class="ai-val">92%</span>
+                                <span class="ai-label">OPTIMAL</span>
+                            </div>
+                        </div>
+                        <div class="ai-stats">
+                            <div class="stat-row">
+                                <span>Est. Harvest</span>
+                                <span class="stat-val">4.2 Tons</span>
+                            </div>
+                            <div class="stat-row">
+                                <span>Growth Rate</span>
+                                <span class="stat-val">+12%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Center Column: Primary Visuals -->
+            <section class="center-panel">
+                <!-- Live Feed -->
+                <div class="live-feed-container glass-panel">
+                    <div class="feed-overlay">
+                        <div class="rec-indicator">
+                            <div class="red-dot"></div> <span data-i18n="live">LIVE</span>
+                        </div>
+                        <div class="hud-center">
+                            <div class="crosshair"></div>
+                        </div>
+                        <div class="hud-data">
+                            <div>MODE: <span class="accent-text">AUTO-PILOT</span></div>
+                            <div>CAM: <span class="accent-text">4K 60FPS</span></div>
+                        </div>
+                    </div>
+                    <!-- Placeholder image for farm field -->
+                    <video id="webcam-feed" autoplay playsinline muted class="live-feed-img"></video>
+                </div>
+
+                <!-- Spectral Analysis Graph (Visualizer) -->
+                <div class="graph-widget glass-panel">
+                    <div class="widget-header-row">
+                        <h3 data-i18n="spectralAnalysis">SPECTRAL ANALYSIS (VARI)</h3>
+                        <div class="live-dot"></div>
+                    </div>
+                    <canvas id="spectralCanvas"></canvas>
+                </div>
+
+
+                <!-- New Widget: Mission Logs (Fills space) -->
+                <div class="log-widget glass-panel">
+                    <div class="widget-header-row">
+                        <h3 data-i18n="systemLogs">SYSTEM LOGS</h3>
+                        <div class="log-status online"></div>
+                    </div>
+                    <div class="log-console" id="logConsole">
+                        <div class="log-line"><span class="time">10:42:01</span> <span class="info">[SYS]</span> Drone
+                            link
+                            established.</div>
+                        <div class="log-line"><span class="time">10:42:05</span> <span class="success">[NAV]</span> GPS
+                            lock
+                            acquired (12 sats).</div>
+                        <div class="log-line"><span class="time">10:42:15</span> <span class="info">[BAT]</span> Battery
+                            cycle
+                            optimal.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Column: Sensor Data & New Radar -->
+            <aside class="right-panel glass-panel">
+                <div class="panel-header">
+                    <h3 data-i18n="fieldSensors">FIELD STATUS</h3>
+                    <i class="fa-solid fa-chart-pie accent-icon"></i>
+                </div>
+
+                <!-- Field Health Radar -->
+                <div class="widget radar-widget">
+                    <canvas id="radarCanvas"></canvas>
+                    <div class="radar-label" data-i18n="healthIndex">HEALTH INDEX</div>
+                </div>
+
+                <!-- Soil Moisture -->
+                <div class="widget sensor-card">
+                    <div class="sensor-header">
+                        <span data-i18n="soilMoisture">Soil Moisture</span>
+                        <i class="fa-solid fa-water"></i>
+                    </div>
+                    <div class="pro-gauge">
+                        <div class="bar-bg">
+                            <div class="bar-fill" style="width: 28%; background: var(--warning-color);"></div>
+                        </div>
+                        <div class="val-display warning">
+                            <span class="big-num">28</span><span class="pct">%</span>
+                        </div>
+                    </div>
+                    <div class="sensor-status" data-i18n="statusLow">Status: LOW</div>
+                </div>
+
+                <!-- pH Level -->
+                <div class="widget sensor-card">
+                    <div class="sensor-header">
+                        <span data-i18n="phLevel">pH Level</span>
+                        <i class="fa-solid fa-flask"></i>
+                    </div>
+                    <div class="ph-visual">
+                        <div class="ph-scale">
+                            <div class="indicator" style="left: 65%;"></div>
+                        </div>
+                        <div class="ph-val">
+                            <span class="big-num">6.8</span>
+                            <span class="sub-label">Neutral</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tank Level -->
+                <div class="widget sensor-card">
+                    <div class="sensor-header">
+                        <span data-i18n="tankLevel">Tank Level</span>
+                        <i class="fa-solid fa-fill-drip"></i>
+                    </div>
+                    <div class="tank-visual">
+                        <div class="tank-container">
+                            <div class="liquid" style="height: 75%;"></div>
+                        </div>
+                        <div class="tank-val">
+                            <span class="big-num">75</span><span class="pct">%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- New Widget: Pest/Disease Alert -->
+                <div class="widget alert-widget">
+                    <div class="widget-header">
+                        <span data-i18n="alerts">RISK ALERTS</span>
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <div class="alert-item high">
+                        <span class="alert-icon"><i class="fa-solid fa-bug"></i></span>
+                        <div class="alert-info">
+                            <span class="alert-title">Locust Swarm</span>
+                            <span class="alert-prob">High Prob. (85%)</span>
+                        </div>
+                    </div>
+                </div>
+
+            </aside>
+        </main>
+    </div>
+
+    <!-- Chatbot Floating Action Button -->
+    <button id="chatbot-fab" class="chatbot-fab">
+        <i class="fa-solid fa-robot"></i>
+    </button>
+
+    <!-- Small Chat Window -->
+    <div id="chat-window" class="chat-window glass-panel">
+        <div class="chat-header">
+            <div class="chat-title">
+                <i class="fa-solid fa-robot"></i>
+                <span>AERO-BOT</span>
+            </div>
+            <div class="chat-controls">
+                <button id="chat-expand-btn" title="Full Screen"><i class="fa-solid fa-expand"></i></button>
+                <button id="chat-close-btn" title="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="chat-body" id="chat-body-small">
+            <div class="chat-message bot">
+                <div class="msg-content">System online. How can I assist with the drone operations today?</div>
+                <div class="msg-time">10:42</div>
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="chat-input-small" placeholder="Type command..." autocomplete="off">
+            <button id="chat-send-small"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
+    </div>
+
+    <!-- Fullscreen Chat Modal -->
+    <div id="chat-modal" class="chat-modal">
+        <div class="chat-modal-content glass-panel" style="flex-direction: row;">
+            <!-- Conversation History Sidebar -->
+            <div class="chat-sidebar"
+                style="width: 280px; border-right: 1px solid var(--glass-border); background: rgba(0,0,0,0.2); display: flex; flex-direction: column; padding: 20px;">
+                <button id="new-chat-btn"
+                    style="background: var(--primary-accent); color: black; border: none; padding: 12px; border-radius: 6px; font-family: var(--font-heading); font-weight: bold; font-size: 16px; cursor: pointer; margin-bottom: 20px; transition: 0.3s;"><i
+                        class="fa-solid fa-plus"></i> NEW CONVERSATION</button>
+                <div
+                    style="font-size: 12px; color: var(--text-muted); margin-bottom: 15px; font-weight: bold; text-transform: uppercase;">
+                    Recent Transmissions</div>
+                <div id="chat-history-list"
+                    style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;">
+                    <!-- Session Items inject here -->
+                </div>
+            </div>
+
+            <!-- Main Interactive Window -->
+            <div style="flex: 1; display: flex; flex-direction: column;">
+                <div class="chat-header modal-header">
+                    <div class="chat-title huge">
+                        <i class="fa-solid fa-robot"></i>
+                        <span>AERO-BOT INTELLIGENCE</span>
+                        <span class="status-badge">ONLINE</span>
+                    </div>
+                    <button id="chat-modal-close-btn" class="close-modal-btn"><i class="fa-solid fa-compress"></i> EXIT
+                        FULLSCREEN</button>
+                </div>
+                <div class="chat-body modal-body" id="chat-body-large">
+                    <!-- Chat history synced here -->
+                </div>
+                <div class="chat-input-area modal-input">
+                    <input type="text" id="chat-input-large" placeholder="Enter complex commands or queries..."
+                        autocomplete="off">
+                    <button id="chat-send-large"><i class="fa-solid fa-paper-plane"></i> SEND</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- 1. Three.js Rotating Drone Background ---
+            initThreeJSBackground();
+
+            // --- 2. Theme Switching ---
+            initThemeSwitch();
+
+            // --- 3. Language Switching ---
+            initLanguageSwitch();
+
+            // --- 4. Live Data Simulation ---
+            setInterval(updateTelemetry, 2500);
+            setInterval(updateLogs, 3500); // New Log generation
+
+            // --- 5. Initialize New Graphs ---
+            initSpectralGraph();
+            initRadarChart();
+
+            // --- 7. Initialize Chatbot ---
+            initChatbot();
+
+            // --- 8. Initialize Recording ---
+            initRecording();
+        });
+
+        // --- Chatbot Logic ---
+        function initChatbot() {
+            const fab = document.getElementById('chatbot-fab');
+            const chatWindow = document.getElementById('chat-window');
+            const closeBtn = document.getElementById('chat-close-btn');
+            const expandBtn = document.getElementById('chat-expand-btn');
+            const modal = document.getElementById('chat-modal');
+            const closeModalBtn = document.getElementById('chat-modal-close-btn');
+
+            const inputSmall = document.getElementById('chat-input-small');
+            const sendSmall = document.getElementById('chat-send-small');
+            const bodySmall = document.getElementById('chat-body-small');
+
+            const inputLarge = document.getElementById('chat-input-large');
+            const sendLarge = document.getElementById('chat-send-large');
+            const bodyLarge = document.getElementById('chat-body-large');
+
+            let currentSessionId = null;
+
+            // Start New Chat Function
+            const newChatBtn = document.getElementById('new-chat-btn');
+            if (newChatBtn) {
+                newChatBtn.addEventListener('click', () => {
+                    currentSessionId = null;
+                    bodySmall.innerHTML = '';
+                    bodyLarge.innerHTML = '';
+                    // Re-welcome
+                    const welcomeHTML = `
+                        <div class="chat-message bot">
+                            <div class="msg-content">Welcome! How can I assist you with your drone operations today?</div>
+                            <div class="msg-footer" style="display:flex; justify-content:space-between; align-items:center; margin-top: 5px;">
+                                <div class="msg-time">${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
+                            </div>
+                        </div>
+                    `;
+                    bodySmall.insertAdjacentHTML('beforeend', welcomeHTML);
+                    bodyLarge.insertAdjacentHTML('beforeend', welcomeHTML);
+                });
+            }
+
+            // Toggle Small Chat
+            fab.addEventListener('click', () => {
+                chatWindow.classList.toggle('active');
+                fab.style.transform = chatWindow.classList.contains('active') ? 'scale(0)' : 'scale(1)';
+            });
+
+            closeBtn.addEventListener('click', () => {
+                chatWindow.classList.remove('active');
+                fab.style.transform = 'scale(1)';
+            });
+
+            // Fullscreen Mode
+            expandBtn.addEventListener('click', () => {
+                modal.classList.add('active');
+                chatWindow.classList.remove('active'); // Hide small chat
+                syncChatHistory();
+            });
+
+            closeModalBtn.addEventListener('click', () => {
+                modal.classList.remove('active');
+                chatWindow.classList.add('active'); // Restore small chat
+            });
+
+            // Send Message Logic
+            function sendMessage(msg, isUser = true) {
+                if (!msg) return null;
+
+                const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                const id = 'msg-' + Date.now() + Math.floor(Math.random() * 1000);
+                
+                let contentHTML = msg;
+                if (!isUser && msg === '%%THINKING%%') {
+                    contentHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Model is thinking...';
+                }
+
+                // Template
+                const msgHTML = `
+            <div class="chat-message ${isUser ? 'user' : 'bot'}" id="${id}">
+                <div class="msg-content" id="content-${id}">${contentHTML}</div>
+                <div class="msg-footer" style="display:flex; justify-content:${isUser ? 'flex-end' : 'space-between'}; align-items:center; margin-top: 5px;">
+                    <div class="msg-time">${time}</div>
+                    ${!isUser ? `<button class="copy-btn" data-id="${id}" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size: 12px;" title="Copy to clipboard"><i class="fa-regular fa-copy"></i></button>` : ''}
+                </div>
+            </div>
+        `;
+
+                // Add to both views
+                bodySmall.insertAdjacentHTML('beforeend', msgHTML);
+                bodyLarge.insertAdjacentHTML('beforeend', msgHTML);
+
+                // Scroll to bottom
+                bodySmall.scrollTop = bodySmall.scrollHeight;
+                bodyLarge.scrollTop = bodyLarge.scrollHeight;
+
+                return id;
+            }
+
+            function typeResponse(id, text) {
+                let processedText = text;
+                // Formatting: Bold **text**
+                processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                // Format Bullet Points
+                processedText = processedText.replace(/\n\s*[\-*]\s+(.*)/g, '<br><br>• $1');
+                // Format Numbered Lists
+                processedText = processedText.replace(/\n\s*(\d+\.)\s+(.*)/g, '<br><br><strong>$1</strong> $2');
+                // Parse Paragraphs (Double Newline)
+                processedText = processedText.replace(/\n\n+/g, '<br><br>');
+                // Parse Single Newlines
+                processedText = processedText.replace(/\n/g, '<br>');
+                // Strip loose asterisks that were unhandled
+                processedText = processedText.replace(/\*/g, '');
+
+                const contentNodeSmall = document.querySelector(`#chat-body-small #content-${id}`);
+                const contentNodeLarge = document.querySelector(`#chat-body-large #content-${id}`);
+
+                if(!contentNodeSmall) return;
+
+                let i = 0;
+                let currentText = '';
+                let isTag = false;
+                
+                function type() {
+                    if (i < processedText.length) {
+                        const char = processedText.charAt(i);
+                        currentText += char;
+                        
+                        if (char === '<') isTag = true;
+                        if (char === '>') isTag = false;
+
+                        contentNodeSmall.innerHTML = currentText;
+                        if(contentNodeLarge) contentNodeLarge.innerHTML = currentText;
+                        
+                        // Keep scroll at bottom
+                        bodySmall.scrollTop = bodySmall.scrollHeight;
+                        bodyLarge.scrollTop = bodyLarge.scrollHeight;
+
+                        i++;
+                        
+                        if(isTag) {
+                            type(); // skip delay for HTML tags
+                        } else {
+                            setTimeout(type, 15); // fast typing speed
+                        }
+                    } else {
+                        // Final scroll
+                        bodySmall.scrollTop = bodySmall.scrollHeight;
+                        bodyLarge.scrollTop = bodyLarge.scrollHeight;
+                    }
+                }
+                type();
+            }
+
+            function processUserInput(text) {
+                sendMessage(text, true);
+                
+                // Show thinking...
+                const thinkingId = sendMessage('%%THINKING%%', false);
+
+                fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, session_id: currentSessionId })
+                })
+                    .then(res => {
+                        if (!res.ok) throw new Error("Network response was not ok");
+                        return res.json();
+                    })
+                    .then(data => {
+                        currentSessionId = data.session_id;
+                        const answer = data.answer || data.response || "No response received";
+                        typeResponse(thinkingId, answer);
+                        loadSessions(); // Update list to reflect new interaction
+                    })
+                    .catch(err => {
+                        console.error("Chat Error:", err);
+                        typeResponse(thinkingId, "Error: Could not connect to RAG backend. Ensure Ollama is running and models are pulled.");
+                    });
+            }
+
+            // Copy logic delegation
+            document.addEventListener('click', function(e) {
+                const btn = e.target.closest('.copy-btn');
+                if(btn) {
+                    const btnId = btn.getAttribute('data-id');
+                    // Get text from innerHTML but rely on innerText to inherently strip raw tags and preserve spacing
+                    const contentNode = document.querySelector(`#chat-body-large #content-${btnId}`) || document.querySelector(`#chat-body-small #content-${btnId}`);
+                    if(contentNode) {
+                        const rawText = contentNode.innerText;
+                        navigator.clipboard.writeText(rawText).then(() => {
+                            const originalIcon = btn.innerHTML;
+                            btn.innerHTML = '<i class="fa-solid fa-check" style="color:var(--secondary-accent);"></i>';
+                            setTimeout(() => { btn.innerHTML = originalIcon; }, 2000);
+                        });
+                    }
+                }
+            });
+
+            // Event Listeners for Input
+            function handleInput(input, btn) {
+                btn.addEventListener('click', () => {
+                    const text = input.value.trim();
+                    if(text) processUserInput(text);
+                    input.value = '';
+                });
+                input.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        const text = input.value.trim();
+                        if(text) processUserInput(text);
+                        input.value = '';
+                    }
+                });
+            }
+
+            handleInput(inputSmall, sendSmall);
+            handleInput(inputLarge, sendLarge);
+
+            function syncChatHistory() {
+                // Keep scroll at bottom
+                bodyLarge.scrollTop = bodyLarge.scrollHeight;
+            }
+
+            // Session List Management
+            function loadSessions() {
+                fetch('/chat/sessions')
+                    .then(res => res.json())
+                    .then(data => {
+                        const list = document.getElementById('chat-history-list');
+                        if(!list) return;
+                        list.innerHTML = '';
+                        data.forEach(sess => {
+                            const d = new Date(sess.created_at);
+                            const tStr = isNaN(d) ? '' : d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                            
+                            const div = document.createElement('div');
+                            div.className = 'history-item';
+                            div.innerHTML = `
+                                <div style="font-weight:600; font-size:14px; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${sess.title || 'Conversation'}</div>
+                                <div style="font-size:10px; color:var(--text-muted);">${tStr}</div>
+                            `;
+                            div.style.padding = '10px';
+                            div.style.background = 'rgba(255,255,255,0.05)';
+                            div.style.borderRadius = '6px';
+                            div.style.cursor = 'pointer';
+                            div.style.border = '1px solid var(--glass-border)';
+                            div.style.transition = '0.2s';
+                            
+                            div.onmouseover = () => div.style.background = 'rgba(0, 210, 255, 0.1)';
+                            div.onmouseout = () => div.style.background = 'rgba(255,255,255,0.05)';
+                            
+                            div.onclick = () => loadSessionData(sess.id);
+                            
+                            list.appendChild(div);
+                        });
+                    }).catch(err => console.error("Error loading sessions:", err));
+            }
+
+            function loadSessionData(id) {
+                fetch(`/chat/sessions/${id}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        currentSessionId = data.id;
+                        bodySmall.innerHTML = '';
+                        bodyLarge.innerHTML = '';
+                        if(data.messages) {
+                            data.messages.forEach(msg => {
+                                const isUser = msg.role === 'user';
+                                const parsedDate = new Date(msg.timestamp);
+                                const time = isNaN(parsedDate) ? '' : parsedDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                                
+                                let formattedContent = msg.content;
+                                formattedContent = formattedContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                                formattedContent = formattedContent.replace(/\n\s*[\-*]\s+(.*)/g, '<br><br>• $1');
+                                formattedContent = formattedContent.replace(/\n\s*(\d+\.)\s+(.*)/g, '<br><br><strong>$1</strong> $2');
+                                formattedContent = formattedContent.replace(/\n\n+/g, '<br><br>');
+                                formattedContent = formattedContent.replace(/\n/g, '<br>');
+                                formattedContent = formattedContent.replace(/\*/g, '');
+
+                                const msgId = 'msg-' + Date.now() + Math.floor(Math.random() * 1000);
+
+                                const html = `
+                                    <div class="chat-message ${isUser ? 'user' : 'bot'}" id="${msgId}">
+                                        <div class="msg-content" id="content-${msgId}">${formattedContent}</div>
+                                        <div class="msg-footer" style="display:flex; justify-content:${isUser ? 'flex-end' : 'space-between'}; align-items:center; margin-top: 5px;">
+                                            <div class="msg-time">${time}</div>
+                                            ${!isUser ? `<button class="copy-btn" data-id="${msgId}" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size: 12px;" title="Copy to clipboard"><i class="fa-regular fa-copy"></i></button>` : ''}
+                                        </div>
+                                    </div>
+                                `;
+                                bodySmall.insertAdjacentHTML('beforeend', html);
+                                bodyLarge.insertAdjacentHTML('beforeend', html);
+                            });
+                        }
+                        bodySmall.scrollTop = bodySmall.scrollHeight;
+                        bodyLarge.scrollTop = bodyLarge.scrollHeight;
+                    }).catch(err => console.error("Error loading session data:", err));
+            }
+
+            // Init history list load
+            loadSessions();
+        }
+
+        // --- Recording Logic ---
+        function initRecording() {
+            const recordBtn = document.getElementById('recordBtn');
+            if (!recordBtn) return;
+
+            let isRecording = false;
+            let mediaRecorder;
+            let recordedChunks = [];
+
+            recordBtn.addEventListener('click', async () => {
+                if (!isRecording) {
+                    // Start Recording
+                    const stream = document.getElementById('webcam-feed').srcObject;
+                    if (!stream) {
+                        alert("No camera feed available to record.");
+                        return;
+                    }
+
+                    recordedChunks = [];
+
+                    // Check supported mime types
+                    const mimeType = MediaRecorder.isTypeSupported("video/webm; codecs=vp9")
+                        ? "video/webm; codecs=vp9"
+                        : "video/webm";
+
+                    mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+                    mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0) {
+                            recordedChunks.push(event.data);
+                        }
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        const blob = new Blob(recordedChunks, { type: mimeType });
+                        const url = URL.createObjectURL(blob);
+
+                        // Create download link
+                        const a = document.createElement("a");
+                        document.body.appendChild(a);
+                        a.style = "display: none";
+                        a.href = url;
+                        a.download = `drone-feed-${new Date().toISOString()}.webm`;
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    recordBtn.classList.add('recording');
+                    recordBtn.innerHTML = '<i class="fa-solid fa-stop"></i> <span>STOP</span>';
+                } else {
+                    // Stop Recording
+                    mediaRecorder.stop();
+                    isRecording = false;
+                    recordBtn.classList.remove('recording');
+                    recordBtn.innerHTML = '<i class="fa-solid fa-circle"></i> <span>REC</span>';
+                }
+            });
+        }
+
+
+        // --- Log Generation ---
+        const logMessages = [
+            { type: 'info', msg: '[SYS] Scanning telemetry...' },
+            { type: 'success', msg: '[NAV] Waypoint 4 reached.' },
+            { type: 'info', msg: '[SENS] Soil moisture data packet rx.' },
+            { type: 'warn', msg: '[AI] Minor wind turbulence detected.' },
+            { type: 'success', msg: '[CAM] Image captured (4K).' },
+            { type: 'info', msg: '[NET] Uploading field data...' }
+        ];
+
+        function updateLogs() {
+            const consoleEl = document.getElementById('logConsole');
+            const msgData = logMessages[Math.floor(Math.random() * logMessages.length)];
+            const time = new Date().toLocaleTimeString('en-GB', { hour12: false });
+
+            const div = document.createElement('div');
+            div.className = 'log-line';
+            div.innerHTML = `<span class="time">${time}</span> <span class="${msgData.type}">${msgData.msg.split(' ')[0]}</span> ${msgData.msg.substring(msgData.msg.indexOf(' ') + 1)}`;
+
+            consoleEl.appendChild(div);
+            if (consoleEl.children.length > 6) {
+                consoleEl.removeChild(consoleEl.firstChild);
+            }
+        }
+
+        // --- Spectral Graph (Canvas Visualizer) ---
+        function initSpectralGraph() {
+            const canvas = document.getElementById('spectralCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // Resize handling
+            function resize() {
+                canvas.width = canvas.parentElement.clientWidth;
+                canvas.height = canvas.parentElement.clientHeight - 30; // Accounting for header
+            }
+            resize();
+            window.addEventListener('resize', resize);
+
+            const bars = 40;
+            const barWidth = canvas.width / bars;
+
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+                gradient.addColorStop(0, 'rgba(0, 210, 255, 0.1)');
+                gradient.addColorStop(1, 'rgba(0, 255, 157, 0.8)');
+
+                ctx.fillStyle = gradient;
+
+                for (let i = 0; i < bars; i++) {
+                    // Generate wave pattern mixed with random noise for "spectral" look
+                    const time = Date.now() * 0.002;
+                    const heightFactor = (Math.sin(i * 0.2 + time) + 1) / 2;
+                    const noise = Math.random() * 0.3;
+
+                    const barHeight = (heightFactor * 0.6 + noise * 0.4) * canvas.height;
+
+                    const x = i * barWidth;
+                    const y = canvas.height - barHeight;
+
+                    // Rounded bars
+                    ctx.beginPath();
+                    ctx.roundRect(x + 2, y, barWidth - 4, barHeight, 4);
+                    ctx.fill();
+                }
+
+                requestAnimationFrame(animate);
+            }
+            animate();
+        }
+
+        // --- Radar Chart (Health Index) ---
+        function initRadarChart() {
+            const canvas = document.getElementById('radarCanvas');
+            const ctx = canvas.getContext('2d');
+
+            function resize() {
+                // Use container dimensions but ensure square aspect ratio for radar
+                const size = Math.min(canvas.parentElement.clientWidth, canvas.parentElement.clientHeight);
+                canvas.width = size;
+                canvas.height = size;
+            }
+            resize();
+            window.addEventListener('resize', resize);
+
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const radius = canvas.width / 2 - 20;
+            const numAxes = 5;
+            const labels = ["Water", "Soil", "Pest", "Growth", "Temp"];
+
+            // Random values for the shape
+            let values = [0.8, 0.7, 0.9, 0.85, 0.6];
+            let targetValues = [...values];
+
+            setInterval(() => {
+                // Slowly morph values
+                targetValues = values.map(v => Math.max(0.4, Math.min(1.0, v + (Math.random() - 0.5) * 0.2)));
+            }, 2000);
+
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Interpolate current values towards target
+                values = values.map((v, i) => v + (targetValues[i] - v) * 0.05);
+
+                // Draw Web/Grid
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+                ctx.lineWidth = 1;
+
+                for (let level = 1; level <= 4; level++) {
+                    const r = (radius / 4) * level;
+                    ctx.beginPath();
+                    for (let i = 0; i <= numAxes; i++) {
+                        const angle = (Math.PI * 2 * i) / numAxes - Math.PI / 2;
+                        const x = centerX + Math.cos(angle) * r;
+                        const y = centerY + Math.sin(angle) * r;
+                        if (i === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.closePath();
+                    ctx.stroke();
+                }
+
+                // Draw Axes
+                ctx.beginPath();
+                for (let i = 0; i < numAxes; i++) {
+                    const angle = (Math.PI * 2 * i) / numAxes - Math.PI / 2;
+                    const x = centerX + Math.cos(angle) * radius;
+                    const y = centerY + Math.sin(angle) * radius;
+                    ctx.moveTo(centerX, centerY);
+                    ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
+                // Draw Data Shape
+                ctx.fillStyle = 'rgba(0, 210, 255, 0.3)';
+                ctx.strokeStyle = '#00d2ff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                for (let i = 0; i < numAxes; i++) {
+                    const angle = (Math.PI * 2 * i) / numAxes - Math.PI / 2;
+                    const r = radius * values[i];
+                    const x = centerX + Math.cos(angle) * r;
+                    const y = centerY + Math.sin(angle) * r;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Draw Points
+                ctx.fillStyle = '#fff';
+                for (let i = 0; i < numAxes; i++) {
+                    const angle = (Math.PI * 2 * i) / numAxes - Math.PI / 2;
+                    const r = radius * values[i];
+                    const x = centerX + Math.cos(angle) * r;
+                    const y = centerY + Math.sin(angle) * r;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                requestAnimationFrame(animate);
+            }
+            animate();
+        }
+
+        // --- Three.js Logic ---
+        function initThreeJSBackground() {
+            const container = document.getElementById('canvas-container');
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            const scene = new THREE.Scene();
+
+            // Camera
+            const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+            camera.position.z = 5;
+
+            // Renderer
+            const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            // Geometry - Abstract Drone Representation (Group of geometric shapes since we lack an asset)
+            const droneGroup = new THREE.Group();
+
+            // Body
+            const bodyGeometry = new THREE.BoxGeometry(1.5, 0.3, 0.8);
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: 0x222222,
+                roughness: 0.3,
+                metalness: 0.8
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            droneGroup.add(body);
+
+            // Arms
+            const armGeom = new THREE.CylinderGeometry(0.1, 0.1, 3.5);
+            const armMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+            const arm1 = new THREE.Mesh(armGeom, armMat);
+            arm1.rotation.z = Math.PI / 4;
+            arm1.rotation.x = Math.PI / 2;
+            droneGroup.add(arm1);
+
+            const arm2 = new THREE.Mesh(armGeom, armMat);
+            arm2.rotation.z = -Math.PI / 4;
+            arm2.rotation.x = Math.PI / 2;
+            droneGroup.add(arm2);
+
+            // Rotors (Visualized as semi-transparent discs)
+            const rotorGeom = new THREE.CylinderGeometry(0.8, 0.8, 0.05, 32);
+            const rotorMat = new THREE.MeshBasicMaterial({
+                color: 0x00d2ff,
+                transparent: true,
+                opacity: 0.2,
+                side: THREE.DoubleSide
+            });
+
+            const rotorPositions = [
+                { x: 1.2, y: 0.2, z: 1.2 },
+                { x: -1.2, y: 0.2, z: -1.2 },
+                { x: 1.2, y: 0.2, z: -1.2 },
+                { x: -1.2, y: 0.2, z: 1.2 }
+            ];
+
+            rotorPositions.forEach(pos => {
+                const rotor = new THREE.Mesh(rotorGeom, rotorMat);
+                rotor.position.set(pos.x, pos.y, pos.z);
+                droneGroup.add(rotor);
+            });
+
+            // Add particles/glow
+            const particleGeom = new THREE.BufferGeometry();
+            const particleCount = 100;
+            const posArray = new Float32Array(particleCount * 3);
+            for (let i = 0; i < particleCount * 3; i++) {
+                posArray[i] = (Math.random() - 0.5) * 10;
+            }
+            particleGeom.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            const particleMat = new THREE.PointsMaterial({
+                size: 0.05,
+                color: 0x00ff9d,
+                transparent: true,
+                opacity: 0.5
+            });
+            const particles = new THREE.Points(particleGeom, particleMat);
+            scene.add(particles);
+
+            scene.add(droneGroup);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const pointLight = new THREE.PointLight(0x00d2ff, 1);
+            pointLight.position.set(5, 5, 5);
+            scene.add(pointLight);
+
+            const pointLight2 = new THREE.PointLight(0xff9d00, 0.5);
+            pointLight2.position.set(-5, -5, 5);
+            scene.add(pointLight2);
+
+            // Animation Loop
+            let time = 0;
+            function animate() {
+                requestAnimationFrame(animate);
+
+                time += 0.005;
+
+                // Gentle float
+                droneGroup.position.y = Math.sin(time) * 0.2;
+
+                // Slow rotation
+                droneGroup.rotation.y += 0.002;
+                droneGroup.rotation.z = Math.sin(time * 0.5) * 0.05; // Slight tilt
+
+                // Particle rotation
+                particles.rotation.y -= 0.0005;
+
+                renderer.render(scene, camera);
+            }
+
+            animate();
+
+            // Handle Resize
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        // --- Theme Switch ---
+        function initThemeSwitch() {
+            const toggle = document.getElementById('checkbox');
+            const html = document.documentElement;
+
+            toggle.addEventListener('change', () => {
+                if (toggle.checked) {
+                    html.setAttribute('data-theme', 'light');
+                } else {
+                    html.setAttribute('data-theme', 'dark');
+                }
+            });
+        }
+
+        // --- Language Switch ---
+        const translations = {
+            en: {
+                brandName: "Trinetra",
+                flightTelemetry: "FLIGHT TELEMETRY",
+                altitude: "ALT",
+                speed: "SPD",
+                battery: "BATTERY",
+                gpsSignal: "GPS SIGNAL",
+                live: "LIVE",
+                automation: "AUTOMATION",
+                autoWaterDesc: "Auto-water when moisture < 30%",
+                active: "ACTIVE",
+                fieldSensors: "FIELD SENSORS",
+                soilMoisture: "Soil Moisture",
+                statusLow: "Status: LOW",
+                phLevel: "pH Level",
+                tankLevel: "Tank Level",
+                spectralAnalysis: "SPECTRAL ANALYSIS (NDVI)",
+                healthIndex: "HEALTH INDEX",
+                fieldSensors: "FIELD STATUS",
+                weather: "WEATHER",
+                systemLogs: "SYSTEM LOGS",
+                alerts: "RISK ALERTS"
+            },
+            hi: {
+                brandName: "एरो-एग्री प्रहरी",
+                flightTelemetry: "उड़ान टेलीमेट्री",
+                altitude: "ऊंचाई",
+                speed: "गति",
+                battery: "बैटरी",
+                gpsSignal: "जीपीएस सिग्नल",
+                live: "लाइव",
+                automation: "ऑटो",
+                autoWaterDesc: "नमी < ३०% होने पर स्वचालित पानी",
+                active: "सक्रिय",
+                fieldSensors: "खेत की स्थिति",
+                soilMoisture: "मिट्टी की नमी",
+                statusLow: "स्थिति: कम",
+                phLevel: "पीएच स्तर",
+                tankLevel: "टैंक स्तर",
+                spectralAnalysis: "स्पेक्ट्रल विश्लेषण",
+                healthIndex: "स्वास्थ्य सूचकांक",
+                weather: "मौसम",
+                systemLogs: "सिस्टम लॉग",
+                alerts: "जोखिम चेतावनी"
+            },
+            mr: {
+                brandName: "एरो-एग्री सेंटिनेल",
+                flightTelemetry: "फ्लाइट टेलिमेट्री",
+                altitude: "उंची",
+                speed: "वेग",
+                battery: "बॅटरी",
+                gpsSignal: "जीपीएस सिग्नल",
+                live: "थेट",
+                automation: "ऑटो",
+                autoWaterDesc: "ओलावा < ३०% असल्यास स्वयंचलित पाणी",
+                active: "सक्रिय",
+                fieldSensors: "शेताची स्थिती",
+                soilMoisture: "मातीची आर्द्रता",
+                statusLow: "स्थिती: कमी",
+                phLevel: "पीएच पातळी",
+                tankLevel: "टाकी पातळी",
+                spectralAnalysis: "वर्णक्रमीय विश्लेषण",
+                healthIndex: "आरोग्य निर्देशांक",
+                weather: "हवामान",
+                systemLogs: "सिस्टम लॉग्स",
+                alerts: "धोका सूचना"
+            }
+        };
+
+        function initLanguageSwitch() {
+            const langSelect = document.getElementById('langSelect');
+
+            langSelect.addEventListener('change', (e) => {
+                const lang = e.target.value;
+                updateContent(lang);
+            });
+        }
+
+        function updateContent(lang) {
+            const elements = document.querySelectorAll('[data-i18n]');
+            elements.forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[lang] && translations[lang][key]) {
+                    el.textContent = translations[lang][key];
+                }
+            });
+
+            // Update body font if Devnagari to look better? 
+            // For now sticking to premium fonts defined in CSS which support extensive glyphs.
+        }
+
+        // --- Simulation Logic ---
+        function updateTelemetry() {
+            // Randomize simple values to make the dashboard feel 'alive'
+
+            // Altitude +/- 1m
+            const altEl = document.querySelector('#altGauge .value');
+            let currentAlt = parseInt(altEl.textContent);
+            let change = Math.floor(Math.random() * 3) - 1; // -1, 0, 1
+            altEl.textContent = Math.max(0, currentAlt + change);
+
+            // Speed +/- 1km/h
+            const spdEl = document.querySelector('#speedGauge .value');
+            let currentSpd = parseInt(spdEl.textContent);
+            change = Math.floor(Math.random() * 3) - 1;
+            spdEl.textContent = Math.max(0, currentSpd + change);
+
+            // Voltage fluctuation
+            const voltEl = document.querySelector('.battery-details span:first-child');
+            let volt = (22 + Math.random() * 0.5).toFixed(1);
+            voltEl.textContent = `${volt}V`;
+
+            // pH Fluctuation slightly
+            const phEl = document.querySelector('.ph-val .big-num');
+            let ph = (6.8 + (Math.random() * 0.2 - 0.1)).toFixed(1);
+            phEl.textContent = ph;
+
+            // Wind Update
+            const windSpeed = document.getElementById('windSpeed');
+            const windArrow = document.getElementById('windArrow');
+            if (windSpeed) {
+                windSpeed.textContent = Math.floor(Math.random() * 10 + 5); // 5-15
+                const rot = Math.floor(Math.random() * 360);
+                windArrow.style.transform = `rotate(${rot}deg)`;
+            }
+
+            // AI Yield Update (Slow random fluctuation)
+            if (Math.random() > 0.7) {
+                const aiValEl = document.querySelector('.ai-val');
+                if (aiValEl) {
+                    let base = 92;
+                    let val = base + Math.floor(Math.random() * 5 - 2);
+                    aiValEl.textContent = `${val}%`;
+                }
+            }
+        }
+
+        // --- Webcam Logic ---
+        async function initWebcam() {
+            const video = document.getElementById('webcam-feed');
+            if (!video) return;
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("Error accessing webcam: ", err);
+                // Add error log to the system logs
+                const consoleEl = document.getElementById('logConsole');
+                if (consoleEl) {
+                    const div = document.createElement('div');
+                    div.className = 'log-line';
+                    div.innerHTML = `<span class="time">${new Date().toLocaleTimeString('en-GB', { hour12: false })}</span> <span class="error" style="color: #ff4757;">[ERR]</span> Camera access denied.`;
+                    consoleEl.appendChild(div);
+                }
+            }
+        }
+
+    </script>
+</body>
+
+</html>

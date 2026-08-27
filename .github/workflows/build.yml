@@ -1,0 +1,13 @@
+name: Docker Build Validation
+
+on: [push, pull_request]
+
+jobs:
+  docker-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Dockerfiles
+        run: |
+          docker build -t drone-backend:test -f deployment/docker/backend.Dockerfile .
+          docker build -t drone-frontend:test -f deployment/docker/frontend.Dockerfile .
