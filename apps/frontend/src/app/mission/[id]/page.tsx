@@ -25,6 +25,14 @@ const IC: Record<string, ReactNode> = {
   signal: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 20h.01"></path><path d="M7 20v-4"></path><path d="M12 20v-8"></path><path d="M17 20V4"></path></svg>,
 };
 
+interface AgriData {
+  cropType?: string;
+  diseaseType?: string;
+  confidence?: number;
+  pesticide?: string;
+  sprayAmount?: number;
+}
+
 export default function MissionDashboard() {
   const router = useRouter();
   const { id } = useParams();
@@ -78,7 +86,7 @@ export default function MissionDashboard() {
 
   const [humanCount, setHumanCount] = useState(0);
   const [detectionsList, setDetectionsList] = useState<{filename: string, url: string}[]>([]);
-  const [latestDetections, setLatestDetections] = useState<{x: number, y: number, w: number, h: number, conf: number}[]>([]);
+  const [latestDetections, setLatestDetections] = useState<{x?: number, y?: number, w?: number, h?: number, box?: number[], conf?: number}[]>([]);
   const [videoSize, setVideoSize] = useState({ w: 1280, h: 720 });
   const [selectedModel, setSelectedModel] = useState<"V2" | "YOLOv8m" | "version3" | "AgriCNN">("YOLOv8m");
 
@@ -174,8 +182,8 @@ export default function MissionDashboard() {
           x = det.box[0]; y = det.box[1];
           w = det.box[2] - det.box[0]; h = det.box[3] - det.box[1];
         } else {
-          x = det.x; y = det.y;
-          w = det.w; h = det.h;
+          x = det.x ?? 0; y = det.y ?? 0;
+          w = det.w ?? 0; h = det.h ?? 0;
         }
         const conf = det.conf || 0;
         ctx.strokeRect(x, y, w, h);
@@ -252,8 +260,8 @@ export default function MissionDashboard() {
             x = det.box[0]; y = det.box[1];
             w = det.box[2] - det.box[0]; h = det.box[3] - det.box[1];
           } else {
-            x = det.x; y = det.y;
-            w = det.w; h = det.h;
+            x = det.x ?? 0; y = det.y ?? 0;
+            w = det.w ?? 0; h = det.h ?? 0;
           }
           const conf = det.conf || 0;
           ctx.strokeRect(x, y, w, h);
