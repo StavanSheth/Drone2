@@ -732,10 +732,8 @@ export default function MissionDashboard() {
               .filter((id: any) => typeof id === "number");
             const humanIdsStr = trackIds.length > 0
               ? trackIds.map((id: number) => `#${id}`).join(", ")
-              : "-";
-            const idListMsg = trackIds.length > 0
-              ? ` [IDs: ${humanIdsStr}]`
-              : "";
+              : Array.from({ length: count }, (_, i) => `#${i + 1}`).join(", ");
+            const idListMsg = ` [IDs: ${humanIdsStr}]`;
 
             addActivityLog(
               "HUMAN_DETECTED",
@@ -785,22 +783,27 @@ export default function MissionDashboard() {
     return () => clearInterval(interval);
   }, [isPlaying, selectedModel, missionId, telemetry.voltage, telemetry.lat, telemetry.lng, updateResolvedGps, addActivityLog]);
 
-  // CSV Export
+  // CSV Export - Mission Activity Logs
   const handleDownloadCSV = () => {
     const headers = ["Timestamp", "Event_Tag", "Message", "Latitude", "Longitude", "Altitude_m", "Battery_Percent", "Voltage_V", "Speed_ms", "Humans_Detected", "Human_IDs"];
-    const rows = activityLogs.map(l => [
-      `"${l.time}"`,
-      `"${l.tag}"`,
-      `"${(l.msg || '').replace(/"/g, '""')}"`,
-      (l.lat || 0).toFixed(6),
-      (l.lng || 0).toFixed(6),
-      (l.alt || 0).toFixed(2),
-      (l.batt || 0).toFixed(1),
-      (l.voltage || 0).toFixed(2),
-      (l.vel || 0).toFixed(2),
-      l.humanCount || 0,
-      `"${l.humanIds || '-'}"`
-    ]);
+    const rows = activityLogs.map(l => {
+      const derivedIds = (l.humanCount > 0 && (!l.humanIds || l.humanIds === "-"))
+        ? Array.from({ length: l.humanCount }, (_, i) => `#${i + 1}`).join(", ")
+        : (l.humanIds || "-");
+      return [
+        `"${l.time}"`,
+        `"${l.tag}"`,
+        `"${(l.msg || '').replace(/"/g, '""')}"`,
+        (l.lat || 0).toFixed(6),
+        (l.lng || 0).toFixed(6),
+        (l.alt || 0).toFixed(2),
+        (l.batt || 0).toFixed(1),
+        (l.voltage || 0).toFixed(2),
+        (l.vel || 0).toFixed(2),
+        l.humanCount || 0,
+        `"${derivedIds}"`
+      ];
+    });
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -810,6 +813,28 @@ export default function MissionDashboard() {
     link.click();
     document.body.removeChild(link);
     addActivityLog("CSV_EXPORT", "ACTIVITY TELEMETRY LOGS EXPORTED AS CSV", "#10b981");
+  };
+
+  // CSV Export - Persistent Track Record
+  const handleDownloadTracksCSV = () => {
+    const headers = ["Track_ID", "Class_Name", "Confidence_Percent", "First_Seen", "Last_Seen", "Observations"];
+    const rows = trackHistoryList.map(t => [
+      `"#${t.track_id}"`,
+      `"${t.class_name}"`,
+      (t.conf * 100).toFixed(1),
+      `"${t.first_seen}"`,
+      `"${t.last_seen}"`,
+      t.observations
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `MISSION_${missionId}_PERSISTENT_TRACKS.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    addActivityLog("TRACKS_EXPORT", "PERSISTENT TRACK RECORD EXPORTED AS CSV", "#38bdf8");
   };
 
   // Report Export
@@ -1705,6 +1730,11 @@ export default function MissionDashboard() {
                             <span>⛰ ALT: {log.alt.toFixed(1)}m</span>
                             <span>💨 SPD: {log.vel.toFixed(1)}m/s</span>
                             {log.humanCount > 0 && <span className="text-[#10b981] font-bold">🎯 TARGETS: {log.humanCount}</span>}
+                            {log.humanIds && log.humanIds !== "-" && (
+                              <span className="text-[#38bdf8] font-bold bg-[#38bdf8]/10 px-1.5 py-0.5 rounded border border-[#38bdf8]/30">
+                                🆔 {log.humanIds}
+                              </span>
+                            )}
                           </div>
                         </div>
                       ))
@@ -1745,19 +1775,27 @@ export default function MissionDashboard() {
                         {activeTrackCount} ACTIVE / {uniqueTracksSeen} TOTAL OBSERVED
                       </span>
                     </div>
-                    <button
-                      onClick={() => {
-                        fetch(`http://localhost:8000/tracking/sessions/${sessionFolder}/stream_${id || "default"}/reset`, { method: "POST" })
-                          .catch(() => {});
-                        setTrackHistoryList([]);
-                        setActiveTrackCount(0);
-                        setUniqueTracksSeen(0);
-                        frameCounterRef.current = 0;
-                      }}
-                      className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-[6px] transition-colors cursor-pointer"
-                    >
-                      RESET TRACKER
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleDownloadTracksCSV}
+                        className="px-2.5 py-1 bg-[#38bdf8]/15 hover:bg-[#38bdf8]/25 text-[#38bdf8] border border-[#38bdf8]/30 text-[10px] font-bold rounded-[6px] transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <span>📥</span> EXPORT TRACKS CSV
+                      </button>
+                      <button
+                        onClick={() => {
+                          fetch(`http://localhost:8000/tracking/sessions/${sessionFolder}/stream_${id || "default"}/reset`, { method: "POST" })
+                            .catch(() => {});
+                          setTrackHistoryList([]);
+                          setActiveTrackCount(0);
+                          setUniqueTracksSeen(0);
+                          frameCounterRef.current = 0;
+                        }}
+                        className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-[6px] transition-colors cursor-pointer"
+                      >
+                        RESET TRACKER
+                      </button>
+                    </div>
                   </div>
 
                   <div className="h-44 overflow-y-auto font-mono text-[10px] space-y-1.5 pr-2">
