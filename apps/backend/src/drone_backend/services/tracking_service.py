@@ -216,6 +216,9 @@ class TrackingService:
         timestamp: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         if image_base64 == "simulated_frame":
+            from drone_backend.pipelines.cv.detector import _last_voltage, _last_lat, _last_lon, _last_osd_lines
+            pct = calculate_battery_percentage(_last_voltage)
+            osd = list(_last_osd_lines) if _last_osd_lines else [f"[OSD] BATT: {_last_voltage:.1f}V ({pct}%)", f"[OSD] GPS: LAT {_last_lat:.6f} | LON {_last_lon:.6f}"]
             return {
                 "status": "success",
                 "mission_id": mission_id,
@@ -229,8 +232,8 @@ class TrackingService:
                 "detections": [],
                 "tracked_detections": [],
                 "untracked_detections": [],
-                "telemetry": {"voltage": None, "percentage": None, "lat": None, "lon": None},
-                "osd_text": [],
+                "telemetry": {"voltage": _last_voltage, "percentage": pct, "lat": _last_lat, "lon": _last_lon},
+                "osd_text": osd,
             }
 
         header, encoded = image_base64.split(",", 1) if "," in image_base64 else (None, image_base64)

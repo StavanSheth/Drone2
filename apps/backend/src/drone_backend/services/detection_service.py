@@ -42,7 +42,9 @@ class DetectionService:
             return tracking_res
         
         if image_base64 == "simulated_frame":
-            # Return empty detections when no real camera feed
+            from drone_backend.pipelines.cv.detector import _last_voltage, _last_lat, _last_lon, _last_osd_lines, calculate_battery_percentage
+            pct = calculate_battery_percentage(_last_voltage)
+            osd = list(_last_osd_lines) if _last_osd_lines else [f"[OSD] BATT: {_last_voltage:.1f}V ({pct}%)", f"[OSD] GPS: LAT {_last_lat:.6f} | LON {_last_lon:.6f}"]
             return {
                 "status": "success",
                 "total_detected": 0,
@@ -50,12 +52,12 @@ class DetectionService:
                 "detections": [],
                 "saved_images": [],
                 "telemetry": {
-                    "voltage": None,
-                    "percentage": None,
-                    "lat": None,
-                    "lon": None
+                    "voltage": _last_voltage,
+                    "percentage": pct,
+                    "lat": _last_lat,
+                    "lon": _last_lon
                 },
-                "osd_text": [],
+                "osd_text": osd,
                 "timestamp": datetime.now().isoformat()
             }
 

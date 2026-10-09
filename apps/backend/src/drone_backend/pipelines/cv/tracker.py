@@ -54,7 +54,11 @@ class VisualTracker:
 
         # Dedicated tracker instance per stream
         if BYTETracker is not None:
-            self.byte_tracker = BYTETracker(args=self.tracker_args, frame_rate=self.frame_rate)
+            setattr(self.tracker_args, "frame_rate", self.frame_rate)
+            try:
+                self.byte_tracker = BYTETracker(args=self.tracker_args)
+            except TypeError:
+                self.byte_tracker = BYTETracker(args=self.tracker_args, frame_rate=self.frame_rate)
         else:
             self.byte_tracker = None
 

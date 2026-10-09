@@ -857,23 +857,27 @@ export default function MissionDashboard() {
 
       if (uploadedImage) {
         base64Image = uploadedImage;
-      } else if (video && canvas && video.readyState >= 2 && video.videoWidth > 0) {
-        // If a live camera feed is active, capture a real frame
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          if (videoSize.w !== video.videoWidth || videoSize.h !== video.videoHeight) {
-            setVideoSize({ w: video.videoWidth, h: video.videoHeight });
-          }
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          base64Image = canvas.toDataURL("image/jpeg", 0.6);
+      } else if (video && canvas && video.videoWidth > 0) {
+        // If a live camera feed or video is active, capture a real frame
+        try {
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            if (videoSize.w !== video.videoWidth || videoSize.h !== video.videoHeight) {
+              setVideoSize({ w: video.videoWidth, h: video.videoHeight });
+            }
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            base64Image = canvas.toDataURL("image/jpeg", 0.6);
 
-          // Store frame in buffer for 10s skip
-          frameBufferRef.current.push({ image: base64Image, timestamp: Date.now() });
-          if (frameBufferRef.current.length > MAX_FRAME_BUFFER) {
-            frameBufferRef.current.shift();
+            // Store frame in buffer for 10s skip
+            frameBufferRef.current.push({ image: base64Image, timestamp: Date.now() });
+            if (frameBufferRef.current.length > MAX_FRAME_BUFFER) {
+              frameBufferRef.current.shift();
+            }
           }
+        } catch (captureErr) {
+          console.warn("Canvas capture warning:", captureErr);
         }
       }
 
@@ -1024,7 +1028,7 @@ export default function MissionDashboard() {
     };
     const interval = setInterval(processFrame, 1500);
     return () => clearInterval(interval);
-  }, [isPlaying, selectedModel, missionId, telemetry.voltage, telemetry.lat, telemetry.lng, updateResolvedGps, addActivityLog]);
+  }, [isPlaying, uploadedImage, selectedModel, missionId, telemetry.voltage, telemetry.lat, telemetry.lng, updateResolvedGps, addActivityLog]);
 
   // CSV Export - Mission Activity Logs
   const handleDownloadCSV = () => {
@@ -2543,6 +2547,7 @@ export default function MissionDashboard() {
                 autoPlay 
                 playsInline 
                 muted 
+                crossOrigin="anonymous"
                 onLoadedMetadata={(e: any) => {
                   if (e.target && !uploadedImage) {
                     setVideoSize({ w: e.target.videoWidth, h: e.target.videoHeight });
