@@ -122,9 +122,18 @@ export default function MissionDashboard() {
     voltage: number;
     vel: number;
     humanCount: number;
+    humanIds?: string;
   }[]>([]);
   // Detection Audit History (for report and live inspection)
-  const [detectionAuditTrail, setDetectionAuditTrail] = useState<{time: string, count: number, maxConf: number, model: string, lat: number, lng: number}[]>([]);
+  const [detectionAuditTrail, setDetectionAuditTrail] = useState<{
+    time: string;
+    count: number;
+    maxConf: number;
+    model: string;
+    lat: number;
+    lng: number;
+    trackIds?: number[];
+  }[]>([]);
 
   const telemetryRef = useRef(telemetry);
   telemetryRef.current = telemetry;
@@ -311,10 +320,10 @@ export default function MissionDashboard() {
     addActivityLog("RECORDING", "Recording saved", "#10b981");
   };
 
-  const addActivityLog = useCallback((tag: string, msg: string, color: string = "#3b82f6") => {
+  const addActivityLog = useCallback((tag: string, msg: string, color: string = "#3b82f6", explicitCount?: number, explicitHumanIds?: string) => {
     const time = new Date().toLocaleTimeString();
     const tel = telemetryRef.current;
-    const count = humanCountRef.current;
+    const count = explicitCount !== undefined ? explicitCount : humanCountRef.current;
     setActivityLogs(prev => {
       if (prev.length > 0 && prev[prev.length - 1].msg === msg && prev[prev.length - 1].tag === tag) return prev;
       return [...prev, {
@@ -328,7 +337,8 @@ export default function MissionDashboard() {
         batt: tel.batt,
         voltage: tel.voltage,
         vel: tel.vel,
-        humanCount: count
+        humanCount: count,
+        humanIds: explicitHumanIds || "-",
       }].slice(-80);
     });
   }, []);
@@ -717,10 +727,22 @@ export default function MissionDashboard() {
           // Log human detections dynamically and store for audit report
           if (count > 0) {
             const maxConf = data.detections?.reduce((acc: number, d: any) => Math.max(acc, d.conf || 0), 0) || 0;
+            const trackIds: number[] = (data.detections || [])
+              .map((d: any) => d.track_id)
+              .filter((id: any) => typeof id === "number");
+            const humanIdsStr = trackIds.length > 0
+              ? trackIds.map((id: number) => `#${id}`).join(", ")
+              : "-";
+            const idListMsg = trackIds.length > 0
+              ? ` [IDs: ${humanIdsStr}]`
+              : "";
+
             addActivityLog(
               "HUMAN_DETECTED",
-              `TARGET CONFIRMED (${count} Person(s), Conf: ${(maxConf * 100).toFixed(0)}%, Engine: ${selectedModel})`,
-              "#10b981"
+              `TARGET CONFIRMED (${count} Person(s)${idListMsg}, Conf: ${(maxConf * 100).toFixed(0)}%, Engine: ${selectedModel})`,
+              "#10b981",
+              count,
+              humanIdsStr
             );
             setDetectionAuditTrail(prev => {
               const lastEvt = prev[prev.length - 1];
@@ -734,7 +756,8 @@ export default function MissionDashboard() {
                   maxConf,
                   model: selectedModel,
                   lat: telemetry.lat,
-                  lng: telemetry.lng
+                  lng: telemetry.lng,
+                  trackIds: trackIds.length > 0 ? trackIds : undefined,
                 }
               ].slice(-50);
             });
@@ -764,7 +787,7 @@ export default function MissionDashboard() {
 
   // CSV Export
   const handleDownloadCSV = () => {
-    const headers = ["Timestamp", "Event_Tag", "Message", "Latitude", "Longitude", "Altitude_m", "Battery_Percent", "Voltage_V", "Speed_ms", "Humans_Detected"];
+    const headers = ["Timestamp", "Event_Tag", "Message", "Latitude", "Longitude", "Altitude_m", "Battery_Percent", "Voltage_V", "Speed_ms", "Humans_Detected", "Human_IDs"];
     const rows = activityLogs.map(l => [
       `"${l.time}"`,
       `"${l.tag}"`,
@@ -775,7 +798,8 @@ export default function MissionDashboard() {
       (l.batt || 0).toFixed(1),
       (l.voltage || 0).toFixed(2),
       (l.vel || 0).toFixed(2),
-      l.humanCount || 0
+      l.humanCount || 0,
+      `"${l.humanIds || '-'}"`
     ]);
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
@@ -840,7 +864,8 @@ export default function MissionDashboard() {
         } else {
           detectionAuditTrail.forEach((evt, idx) => {
             if (y > 270) { doc.addPage(); y = 15; }
-            doc.text(`• [${evt.time}] TARGET #${idx + 1}: ${evt.count} Person(s) | Conf: ${(evt.maxConf * 100).toFixed(0)}% | GPS: (${evt.lat.toFixed(5)}, ${evt.lng.toFixed(5)}) | Model: ${evt.model}`, 14, y);
+            const idsText = evt.trackIds && evt.trackIds.length > 0 ? ` [IDs: ${evt.trackIds.map(id => '#' + id).join(', ')}]` : '';
+            doc.text(`• [${evt.time}] TARGET #${idx + 1}: ${evt.count} Person(s)${idsText} | Conf: ${(evt.maxConf * 100).toFixed(0)}% | GPS: (${evt.lat.toFixed(5)}, ${evt.lng.toFixed(5)}) | Model: ${evt.model}`, 14, y);
             y += 4.5;
           });
         }
@@ -1806,7 +1831,12 @@ export default function MissionDashboard() {
                           <div className="flex items-center gap-2.5">
                             <span className="text-[#10b981] font-bold">#{idx + 1}</span>
                             <span className="text-[#3b82f6]">[{evt.time}]</span>
-                            <span className="text-white font-bold">HUMAN TARGET CONFIRMED ({evt.count} Person)</span>
+                            <span className="text-white font-bold">HUMAN TARGET CONFIRMED ({evt.count} Person{evt.count > 1 ? "s" : ""})</span>
+                            {evt.trackIds && evt.trackIds.length > 0 && (
+                              <span className="text-[9px] bg-[#3b82f6]/15 text-[#3b82f6] px-1.5 py-0.5 rounded border border-[#3b82f6]/30">
+                                IDs: {evt.trackIds.map(id => '#' + id).join(', ')}
+                              </span>
+                            )}
                             <span className="text-[9px] bg-[#10b981]/15 text-[#10b981] px-1.5 py-0.5 rounded border border-[#10b981]/30">
                               CONF: {(evt.maxConf * 100).toFixed(0)}%
                             </span>
