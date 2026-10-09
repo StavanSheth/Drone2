@@ -111,6 +111,30 @@ export default function MissionDashboard() {
   const [payloadTargetCount, setPayloadTargetCount] = useState<number>(5); // 1 to 10
   const [isAutoDropping, setIsAutoDropping] = useState<boolean>(false);
 
+  // Mission Telemetry Graph & Analytics State
+  const [telemetryHistory, setTelemetryHistory] = useState<{
+    time: string;
+    timestamp: number;
+    humans: number;
+    payloads: number;
+    battery: number;
+    voltage: number;
+    alt: number;
+    vel: number;
+  }[]>([
+    { time: new Date().toLocaleTimeString(), timestamp: Date.now(), humans: 0, payloads: 0, battery: 96, voltage: 24.9, alt: 0, vel: 0 }
+  ]);
+  const [graphViewMode, setGraphViewMode] = useState<"OVERLAY" | "SWITCHER" | "SPARKLINES">("OVERLAY");
+  const [activeSwitcherMetric, setActiveSwitcherMetric] = useState<"HUMANS" | "BATTERY" | "PAYLOADS" | "FLIGHT">("HUMANS");
+  const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
+  const [visibleSeries, setVisibleSeries] = useState({
+    humans: true,
+    payloads: true,
+    battery: true,
+    altitude: true
+  });
+  const graphCanvasRef = useRef<HTMLCanvasElement>(null);
+
   // Serial & COM state
   const [availablePorts, setAvailablePorts] = useState<{port: string, description: string, active: boolean}[]>([]);
   const [selectedPort, setSelectedPort] = useState<string>("COM3");
@@ -672,6 +696,31 @@ export default function MissionDashboard() {
     addActivityLog("PAYLOAD_RESET", "PAYLOAD DISPENSER COUNTER RESET TO 0", "#3b82f6");
   };
 
+  // Sample telemetry data for charts (every 2.5 seconds)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const nowStr = new Date().toLocaleTimeString();
+      const tel = telemetryRef.current;
+      const count = humanCountRef.current;
+      setTelemetryHistory(prev => {
+        const point = {
+          time: nowStr,
+          timestamp: Date.now(),
+          humans: count,
+          payloads: tel.delivered || 0,
+          battery: Math.round(tel.batt || 0),
+          voltage: parseFloat((tel.voltage || 0).toFixed(2)),
+          alt: parseFloat((tel.alt || 0).toFixed(1)),
+          vel: parseFloat((tel.vel || 0).toFixed(1))
+        };
+        // Keep last 40 telemetry points
+        return [...prev.slice(-39), point];
+      });
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, []);
+
   // Poll Feed OSD Logs
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -1031,6 +1080,104 @@ export default function MissionDashboard() {
             doc.text(`  > ${o}`, 14, y);
             y += 3.8;
           });
+        }
+
+        // 5. Mission Operations & Telemetry Timeline Graph Summary
+        if (graphCanvasRef.current) {
+          try {
+            const canvas = graphCanvasRef.current;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.fillStyle = '#141819';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              
+              // Grid lines
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+              ctx.lineWidth = 1;
+              for (let gy = 30; gy < canvas.height - 25; gy += 35) {
+                ctx.beginPath();
+                ctx.moveTo(40, gy);
+                ctx.lineTo(canvas.width - 20, gy);
+                ctx.stroke();
+              }
+
+              // Axes labels
+              ctx.fillStyle = '#ffffff';
+              ctx.font = 'bold 11px monospace';
+              ctx.fillText('MISSION TELEMETRY & OPERATIONS TIMELINE', 40, 20);
+
+              const points = telemetryHistory.length > 1 ? telemetryHistory : [
+                { humans: 0, payloads: 0, battery: 96, alt: 0 },
+                { humans: humanCount, payloads: telemetry.delivered, battery: telemetry.batt, alt: telemetry.alt }
+              ];
+              const plotW = canvas.width - 70;
+              const plotH = canvas.height - 65;
+              const startX = 45;
+              const startY = 35;
+
+              // Battery line (blue)
+              ctx.strokeStyle = '#3b82f6';
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              points.forEach((pt, i) => {
+                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
+                const py = startY + plotH - (Math.max(0, Math.min(100, pt.battery)) / 100) * plotH;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              });
+              ctx.stroke();
+
+              // Humans line (green)
+              ctx.strokeStyle = '#10b981';
+              ctx.lineWidth = 2.5;
+              ctx.beginPath();
+              points.forEach((pt, i) => {
+                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
+                const py = startY + plotH - (Math.max(0, Math.min(10, pt.humans)) / 10) * plotH;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              });
+              ctx.stroke();
+
+              // Payloads line (orange)
+              ctx.strokeStyle = '#f45b0b';
+              ctx.lineWidth = 2.5;
+              ctx.beginPath();
+              points.forEach((pt, i) => {
+                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
+                const py = startY + plotH - (Math.max(0, Math.min(10, pt.payloads)) / 10) * plotH;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              });
+              ctx.stroke();
+
+              // Altitude line (purple)
+              ctx.strokeStyle = '#a855f7';
+              ctx.lineWidth = 1.8;
+              ctx.beginPath();
+              points.forEach((pt, i) => {
+                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
+                const py = startY + plotH - (Math.max(0, Math.min(100, pt.alt)) / 100) * plotH;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              });
+              ctx.stroke();
+
+              // Legend
+              ctx.font = '9.5px monospace';
+              ctx.fillStyle = '#10b981'; ctx.fillText('● HUMANS (0-10)', canvas.width - 400, 20);
+              ctx.fillStyle = '#f45b0b'; ctx.fillText('● PAYLOADS (0-10)', canvas.width - 280, 20);
+              ctx.fillStyle = '#3b82f6'; ctx.fillText('● BATT % (0-100)', canvas.width - 160, 20);
+              ctx.fillStyle = '#a855f7'; ctx.fillText('● ALT (m)', canvas.width - 65, 20);
+
+              const chartImg = canvas.toDataURL('image/png');
+              if (y > 215) { doc.addPage(); y = 15; }
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(11);
+              doc.text('5. MISSION OPERATIONS & TELEMETRY TIMELINE GRAPH', 10, y);
+              y += 5;
+              doc.addImage(chartImg, 'PNG', 12, y, 186, 56);
+              y += 62;
+            }
+          } catch (e) {
+            console.warn('Could not embed chart in PDF:', e);
+          }
         }
 
         const pdfOutput = doc.output('datauristring');
@@ -2328,6 +2475,455 @@ export default function MissionDashboard() {
                       ))
                     )}
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* ══════════════════════════════════════════════════════════════════════════════════ */}
+            {/* 8. MISSION TELEMETRY GRAPH & OPERATIONS TIMELINE */}
+            {/* ══════════════════════════════════════════════════════════════════════════════════ */}
+            <div className="w-full bg-[#141819]/90 border border-white/10 backdrop-blur-[24px] rounded-[10px] p-4 shadow-xl flex flex-col space-y-3">
+              {/* Hidden canvas used to render chart image into PDF report */}
+              <canvas ref={graphCanvasRef} width={800} height={240} className="hidden" />
+
+              {/* Header Bar & View Switcher */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#00e5ff] animate-pulse"></div>
+                  <div>
+                    <h3 className="font-mono font-bold text-xs text-white uppercase tracking-wider flex items-center gap-2">
+                      MISSION TELEMETRY & OPERATIONS TIMELINE
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/30 font-normal">
+                        REAL-TIME 2.5s
+                      </span>
+                    </h3>
+                    <p className="text-[10px] text-white/40 font-mono">
+                      CHRONOLOGICAL TELEMETRY STREAM & OPERATION DYNAMICS
+                    </p>
+                  </div>
+                </div>
+
+                {/* 3 View Layout Switcher Options */}
+                <div className="flex items-center bg-black/40 border border-white/10 rounded-md p-0.5 text-[10px] font-mono">
+                  <button
+                    onClick={() => setGraphViewMode("OVERLAY")}
+                    className={`px-2.5 py-1 rounded transition-colors ${
+                      graphViewMode === "OVERLAY"
+                        ? "bg-[#00e5ff] text-black font-bold shadow-sm"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    📊 OVERLAY
+                  </button>
+                  <button
+                    onClick={() => setGraphViewMode("SWITCHER")}
+                    className={`px-2.5 py-1 rounded transition-colors ${
+                      graphViewMode === "SWITCHER"
+                        ? "bg-[#00e5ff] text-black font-bold shadow-sm"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    🔍 SWITCHER
+                  </button>
+                  <button
+                    onClick={() => setGraphViewMode("SPARKLINES")}
+                    className={`px-2.5 py-1 rounded transition-colors ${
+                      graphViewMode === "SPARKLINES"
+                        ? "bg-[#00e5ff] text-black font-bold shadow-sm"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    📈 SPARKLINES
+                  </button>
+                </div>
+              </div>
+
+              {/* ─── OPTION 1: MULTI-AXIS OVERLAY VIEW ─── */}
+              {graphViewMode === "OVERLAY" && (
+                <div className="space-y-2">
+                  {/* Metric Legend & Series Toggles */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[10px] font-mono">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setVisibleSeries(p => ({ ...p, humans: !p.humans }))}
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded border transition-all ${
+                          visibleSeries.humans
+                            ? "bg-[#10b981]/15 text-[#10b981] border-[#10b981]/50"
+                            : "bg-white/5 text-white/30 border-white/10 line-through"
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-[#10b981]"></span>
+                        HUMANS ({humanCount})
+                      </button>
+                      <button
+                        onClick={() => setVisibleSeries(p => ({ ...p, payloads: !p.payloads }))}
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded border transition-all ${
+                          visibleSeries.payloads
+                            ? "bg-[#f45b0b]/15 text-[#f45b0b] border-[#f45b0b]/50"
+                            : "bg-white/5 text-white/30 border-white/10 line-through"
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-[#f45b0b]"></span>
+                        PAYLOADS ({telemetry.delivered}/10)
+                      </button>
+                      <button
+                        onClick={() => setVisibleSeries(p => ({ ...p, battery: !p.battery }))}
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded border transition-all ${
+                          visibleSeries.battery
+                            ? "bg-[#3b82f6]/15 text-[#3b82f6] border-[#3b82f6]/50"
+                            : "bg-white/5 text-white/30 border-white/10 line-through"
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-[#3b82f6]"></span>
+                        BATTERY ({telemetry.batt.toFixed(0)}%)
+                      </button>
+                      <button
+                        onClick={() => setVisibleSeries(p => ({ ...p, altitude: !p.altitude }))}
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded border transition-all ${
+                          visibleSeries.altitude
+                            ? "bg-[#a855f7]/15 text-[#a855f7] border-[#a855f7]/50"
+                            : "bg-white/5 text-white/30 border-white/10 line-through"
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-[#a855f7]"></span>
+                        ALTITUDE ({telemetry.alt.toFixed(1)}m)
+                      </button>
+                    </div>
+                    <div className="text-white/40 text-[9px]">
+                      AXES: LEFT [0-10 COUNT] | RIGHT [0-100% / m]
+                    </div>
+                  </div>
+
+                  {/* SVG Multi-Axis Overlay Chart */}
+                  <div
+                    className="relative w-full h-[170px] bg-black/40 rounded-lg border border-white/5 p-2 overflow-hidden"
+                    onMouseLeave={() => setHoveredPointIndex(null)}
+                  >
+                    <svg className="w-full h-full overflow-visible" viewBox="0 0 700 140" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="gradHumans" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#10b981" stopOpacity="0.3" />
+                          <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                        </linearGradient>
+                        <linearGradient id="gradPayloads" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#f45b0b" stopOpacity="0.3" />
+                          <stop offset="100%" stopColor="#f45b0b" stopOpacity="0.0" />
+                        </linearGradient>
+                        <linearGradient id="gradBattery" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.2" />
+                          <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
+                        </linearGradient>
+                      </defs>
+
+                      {/* Horizontal Grid Lines */}
+                      {[0, 35, 70, 105, 135].map((gy, i) => (
+                        <line
+                          key={i}
+                          x1="30"
+                          y1={gy}
+                          x2="670"
+                          y2={gy}
+                          stroke="rgba(255,255,255,0.06)"
+                          strokeDasharray="4 4"
+                          strokeWidth="1"
+                        />
+                      ))}
+
+                      {/* Left Axis Labels (0-10) */}
+                      <text x="5" y="15" fill="#10b981" fontSize="9" fontFamily="monospace">10</text>
+                      <text x="5" y="75" fill="rgba(255,255,255,0.4)" fontSize="9" fontFamily="monospace">5</text>
+                      <text x="5" y="135" fill="rgba(255,255,255,0.4)" fontSize="9" fontFamily="monospace">0</text>
+
+                      {/* Right Axis Labels (0-100) */}
+                      <text x="675" y="15" fill="#3b82f6" fontSize="9" fontFamily="monospace">100</text>
+                      <text x="675" y="75" fill="rgba(255,255,255,0.4)" fontSize="9" fontFamily="monospace">50</text>
+                      <text x="675" y="135" fill="rgba(255,255,255,0.4)" fontSize="9" fontFamily="monospace">0</text>
+
+                      {/* Battery Area & Line */}
+                      {visibleSeries.battery && telemetryHistory.length > 0 && (() => {
+                        const pts = telemetryHistory.map((d, i) => {
+                          const x = 30 + (i / Math.max(1, telemetryHistory.length - 1)) * 640;
+                          const y = 135 - (Math.max(0, Math.min(100, d.battery)) / 100) * 125;
+                          return `${x},${y}`;
+                        }).join(" ");
+                        const firstX = 30;
+                        const lastX = 30 + 640;
+                        return (
+                          <>
+                            <polygon points={`${firstX},135 ${pts} ${lastX},135`} fill="url(#gradBattery)" />
+                            <polyline fill="none" stroke="#3b82f6" strokeWidth="1.8" points={pts} />
+                          </>
+                        );
+                      })()}
+
+                      {/* Altitude Line */}
+                      {visibleSeries.altitude && telemetryHistory.length > 0 && (() => {
+                        const pts = telemetryHistory.map((d, i) => {
+                          const x = 30 + (i / Math.max(1, telemetryHistory.length - 1)) * 640;
+                          const y = 135 - (Math.max(0, Math.min(100, d.alt)) / 100) * 125;
+                          return `${x},${y}`;
+                        }).join(" ");
+                        return <polyline fill="none" stroke="#a855f7" strokeWidth="1.8" strokeDasharray="3 2" points={pts} />;
+                      })()}
+
+                      {/* Payloads Area & Line */}
+                      {visibleSeries.payloads && telemetryHistory.length > 0 && (() => {
+                        const pts = telemetryHistory.map((d, i) => {
+                          const x = 30 + (i / Math.max(1, telemetryHistory.length - 1)) * 640;
+                          const y = 135 - (Math.max(0, Math.min(10, d.payloads)) / 10) * 125;
+                          return `${x},${y}`;
+                        }).join(" ");
+                        const firstX = 30;
+                        const lastX = 30 + 640;
+                        return (
+                          <>
+                            <polygon points={`${firstX},135 ${pts} ${lastX},135`} fill="url(#gradPayloads)" />
+                            <polyline fill="none" stroke="#f45b0b" strokeWidth="2.2" points={pts} />
+                          </>
+                        );
+                      })()}
+
+                      {/* Humans Area & Line */}
+                      {visibleSeries.humans && telemetryHistory.length > 0 && (() => {
+                        const pts = telemetryHistory.map((d, i) => {
+                          const x = 30 + (i / Math.max(1, telemetryHistory.length - 1)) * 640;
+                          const y = 135 - (Math.max(0, Math.min(10, d.humans)) / 10) * 125;
+                          return `${x},${y}`;
+                        }).join(" ");
+                        const firstX = 30;
+                        const lastX = 30 + 640;
+                        return (
+                          <>
+                            <polygon points={`${firstX},135 ${pts} ${lastX},135`} fill="url(#gradHumans)" />
+                            <polyline fill="none" stroke="#10b981" strokeWidth="2.5" points={pts} />
+                          </>
+                        );
+                      })()}
+
+                      {/* Interactive Hover Guides & Slices */}
+                      {telemetryHistory.map((d, i) => {
+                        const x = 30 + (i / Math.max(1, telemetryHistory.length - 1)) * 640;
+                        const isHovered = hoveredPointIndex === i;
+                        return (
+                          <g key={i}>
+                            {isHovered && (
+                              <line
+                                x1={x}
+                                y1="0"
+                                x2={x}
+                                y2="135"
+                                stroke="#00e5ff"
+                                strokeWidth="1.5"
+                                strokeDasharray="2 2"
+                              />
+                            )}
+                            {/* Transparent click/hover detection rectangle */}
+                            <rect
+                              x={x - 8}
+                              y="0"
+                              width="16"
+                              height="140"
+                              fill="transparent"
+                              className="cursor-crosshair"
+                              onMouseEnter={() => setHoveredPointIndex(i)}
+                            />
+                          </g>
+                        );
+                      })}
+                    </svg>
+
+                    {/* Hover Floating Tooltip */}
+                    {hoveredPointIndex !== null && telemetryHistory[hoveredPointIndex] && (
+                      <div
+                        className="absolute top-2 pointer-events-none bg-black/90 border border-[#00e5ff]/50 rounded px-2.5 py-1.5 shadow-2xl backdrop-blur-md text-[10px] font-mono z-20 flex items-center gap-3"
+                        style={{
+                          left: `${Math.min(
+                            75,
+                            Math.max(5, (hoveredPointIndex / Math.max(1, telemetryHistory.length - 1)) * 100)
+                          )}%`
+                        }}
+                      >
+                        <span className="text-white/60">{telemetryHistory[hoveredPointIndex].time}</span>
+                        <span className="text-[#10b981] font-bold">👤 {telemetryHistory[hoveredPointIndex].humans}</span>
+                        <span className="text-[#f45b0b] font-bold">📦 {telemetryHistory[hoveredPointIndex].payloads}</span>
+                        <span className="text-[#3b82f6] font-bold">🔋 {telemetryHistory[hoveredPointIndex].battery}%</span>
+                        <span className="text-[#a855f7] font-bold">🏔️ {telemetryHistory[hoveredPointIndex].alt}m</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ─── OPTION 2: TABBED SINGLE-METRIC SWITCHER VIEW ─── */}
+              {graphViewMode === "SWITCHER" && (
+                <div className="space-y-3">
+                  {/* Metric Sub-Tabs */}
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { id: "HUMANS" as const, label: "HUMAN DETECTIONS", color: "#10b981", val: `${humanCount} Targets`, sub: "Max: " + Math.max(...telemetryHistory.map(d => d.humans), 0) },
+                      { id: "PAYLOADS" as const, label: "PAYLOAD DISPENSER", color: "#f45b0b", val: `${telemetry.delivered}/10 Units`, sub: `Remaining: ${Math.max(0, 10 - telemetry.delivered)}` },
+                      { id: "BATTERY" as const, label: "BATTERY & POWER", color: "#3b82f6", val: `${telemetry.batt.toFixed(1)}%`, sub: `${telemetry.voltage.toFixed(2)}V (6S LiPo)` },
+                      { id: "FLIGHT" as const, label: "FLIGHT PROFILE", color: "#a855f7", val: `${telemetry.alt.toFixed(1)} m`, sub: `Speed: ${telemetry.vel.toFixed(1)} m/s` },
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveSwitcherMetric(tab.id)}
+                        className={`p-2 rounded-lg border text-left transition-all font-mono ${
+                          activeSwitcherMetric === tab.id
+                            ? "bg-white/10 border-[#00e5ff] shadow-md"
+                            : "bg-black/30 border-white/5 hover:border-white/20"
+                        }`}
+                      >
+                        <div className="text-[9px] text-white/50 tracking-wider truncate">{tab.label}</div>
+                        <div className="text-sm font-bold truncate" style={{ color: tab.color }}>{tab.val}</div>
+                        <div className="text-[9px] text-white/40 truncate">{tab.sub}</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Focused Dedicated Chart */}
+                  <div className="w-full h-[155px] bg-black/40 rounded-lg border border-white/5 p-2 overflow-hidden">
+                    <svg className="w-full h-full overflow-visible" viewBox="0 0 700 120" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="switcherFocusGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop
+                            offset="0%"
+                            stopColor={
+                              activeSwitcherMetric === "HUMANS"
+                                ? "#10b981"
+                                : activeSwitcherMetric === "PAYLOADS"
+                                ? "#f45b0b"
+                                : activeSwitcherMetric === "BATTERY"
+                                ? "#3b82f6"
+                                : "#a855f7"
+                            }
+                            stopOpacity="0.35"
+                          />
+                          <stop offset="100%" stopColor="#000000" stopOpacity="0.0" />
+                        </linearGradient>
+                      </defs>
+
+                      {/* Horizontal Grid */}
+                      {[0, 30, 60, 90, 115].map((gy, i) => (
+                        <line
+                          key={i}
+                          x1="20"
+                          y1={gy}
+                          x2="680"
+                          y2={gy}
+                          stroke="rgba(255,255,255,0.06)"
+                          strokeDasharray="4 4"
+                          strokeWidth="1"
+                        />
+                      ))}
+
+                      {/* Single Focused Curve */}
+                      {(() => {
+                        const color =
+                          activeSwitcherMetric === "HUMANS"
+                            ? "#10b981"
+                            : activeSwitcherMetric === "PAYLOADS"
+                            ? "#f45b0b"
+                            : activeSwitcherMetric === "BATTERY"
+                            ? "#3b82f6"
+                            : "#a855f7";
+
+                        const maxScale =
+                          activeSwitcherMetric === "HUMANS" || activeSwitcherMetric === "PAYLOADS" ? 10 : 100;
+
+                        const pts = telemetryHistory.map((d, i) => {
+                          const val =
+                            activeSwitcherMetric === "HUMANS"
+                              ? d.humans
+                              : activeSwitcherMetric === "PAYLOADS"
+                              ? d.payloads
+                              : activeSwitcherMetric === "BATTERY"
+                              ? d.battery
+                              : d.alt;
+                          const x = 20 + (i / Math.max(1, telemetryHistory.length - 1)) * 660;
+                          const y = 115 - (Math.max(0, Math.min(maxScale, val)) / maxScale) * 105;
+                          return `${x},${y}`;
+                        }).join(" ");
+
+                        return (
+                          <>
+                            <polygon points={`20,115 ${pts} 680,115`} fill="url(#switcherFocusGrad)" />
+                            <polyline fill="none" stroke={color} strokeWidth="2.5" points={pts} />
+                          </>
+                        );
+                      })()}
+                    </svg>
+                  </div>
+                </div>
+              )}
+
+              {/* ─── OPTION 3: 4 COMPACT SPARKLINES GRID VIEW ─── */}
+              {graphViewMode === "SPARKLINES" && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                  {[
+                    {
+                      title: "HUMANS DETECTED",
+                      color: "#10b981",
+                      val: humanCount,
+                      unit: "Targets",
+                      max: 10,
+                      data: telemetryHistory.map(d => d.humans),
+                    },
+                    {
+                      title: "PAYLOADS DROPPED",
+                      color: "#f45b0b",
+                      val: telemetry.delivered,
+                      unit: "/ 10 Units",
+                      max: 10,
+                      data: telemetryHistory.map(d => d.payloads),
+                    },
+                    {
+                      title: "BATTERY LEVEL",
+                      color: "#3b82f6",
+                      val: telemetry.batt.toFixed(1),
+                      unit: "%",
+                      max: 100,
+                      data: telemetryHistory.map(d => d.battery),
+                    },
+                    {
+                      title: "FLIGHT ALTITUDE",
+                      color: "#a855f7",
+                      val: telemetry.alt.toFixed(1),
+                      unit: "m",
+                      max: 100,
+                      data: telemetryHistory.map(d => d.alt),
+                    },
+                  ].map((spark, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-black/40 border border-white/5 rounded-lg p-2.5 flex flex-col justify-between space-y-2 font-mono"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] text-white/50 tracking-wider">{spark.title}</span>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: spark.color }}></span>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-lg font-bold" style={{ color: spark.color }}>{spark.val}</span>
+                        <span className="text-[10px] text-white/40">{spark.unit}</span>
+                      </div>
+                      <div className="w-full h-8 overflow-hidden">
+                        <svg className="w-full h-full" viewBox="0 0 100 30" preserveAspectRatio="none">
+                          <polyline
+                            fill="none"
+                            stroke={spark.color}
+                            strokeWidth="2"
+                            points={spark.data
+                              .map((v, i) => {
+                                const x = (i / Math.max(1, spark.data.length - 1)) * 100;
+                                const y = 28 - (Math.max(0, Math.min(spark.max, v)) / spark.max) * 26;
+                                return `${x},${y}`;
+                              })
+                              .join(" ")}
+                          />
+                        </svg>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
