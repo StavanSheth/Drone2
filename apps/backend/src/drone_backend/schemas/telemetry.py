@@ -21,3 +21,7 @@ class SerialLogsResponse(BaseModel):
 
 class OSDLogsResponse(BaseModel):
     logs: List[str]
+    voltage: Optional[float] = None
+    percentage: Optional[float] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None

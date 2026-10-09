@@ -16,7 +16,14 @@ async def get_serial_logs(svc: TelemetryService = Depends(get_telemetry_svc)):
 
 @router.get("/feed-osd-logs", response_model=OSDLogsResponse)
 async def get_osd_logs(det_svc: DetectionService = Depends(get_detection_svc)):
-    return {"logs": det_svc.get_osd_logs()}
+    from drone_backend.pipelines.cv.detector import _last_voltage, _last_lat, _last_lon, calculate_battery_percentage
+    return {
+        "logs": det_svc.get_osd_logs(),
+        "voltage": _last_voltage,
+        "percentage": calculate_battery_percentage(_last_voltage),
+        "lat": _last_lat,
+        "lon": _last_lon,
+    }
 
 @router.post("/telemetry/battery", response_model=BatteryStatusResponse)
 async def get_battery_status(req: TelemetryRequest, svc: TelemetryService = Depends(get_telemetry_svc)):

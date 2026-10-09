@@ -561,10 +561,10 @@ export default function MissionDashboard() {
       }
     }
 
-    // 2. 1st Preference: Camera OCR (if valid and updated within last 10s)
+    // 2. 1st Preference: Camera OCR (Feed Console)
     const curOcrLat = ocrLat !== undefined ? ocrLat : ocrGpsData.lat;
     const curOcrLng = ocrLng !== undefined ? ocrLng : ocrGpsData.lng;
-    if (curOcrLat !== 0 && curOcrLng !== 0 && Math.abs(curOcrLat) <= 90 && Math.abs(curOcrLng) <= 180) {
+    if (curOcrLat !== undefined && curOcrLng !== undefined && !isNaN(curOcrLat) && !isNaN(curOcrLng) && Math.abs(curOcrLat) <= 90 && Math.abs(curOcrLng) <= 180) {
       setTelemetry(prev => ({ ...prev, lat: curOcrLat, lng: curOcrLng }));
       setGpsPrioritySource("OCR");
       return;
@@ -817,6 +817,7 @@ export default function MissionDashboard() {
   }, []);
 
   // Poll Feed OSD Logs
+  // Poll Feed OSD Logs & Sync Live Dashboard Telemetry
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
@@ -830,9 +831,29 @@ export default function MissionDashboard() {
               addActivityLog("FEED_OSD", latest.replace(/\[.*?\]\s*/, ""), "#3b82f6");
             }
           }
+
+          // 1. Sync Battery with Feed Console OCR
+          if (data.voltage != null) {
+            setTelemetry(prev => ({
+              ...prev,
+              voltage: data.voltage,
+              batt: data.percentage != null ? data.percentage : prev.batt,
+            }));
+          }
+
+          // 2. Sync Tactical GPS & UAV Coordinates with Feed Console OCR
+          if (data.lat !== undefined && data.lon !== undefined && data.lat !== null && data.lon !== null) {
+            setOcrGpsData({ lat: data.lat, lng: data.lon, timestamp: Date.now() });
+            setTelemetry(prev => ({
+              ...prev,
+              lat: data.lat,
+              lng: data.lon,
+            }));
+            setGpsPrioritySource("OCR");
+          }
         }
       } catch {}
-    }, 1500);
+    }, 1000);
     return () => clearInterval(interval);
   }, [addActivityLog]);
 
@@ -1013,6 +1034,12 @@ export default function MissionDashboard() {
             data.telemetry?.lon !== null
           ) {
             setOcrGpsData({ lat: data.telemetry.lat, lng: data.telemetry.lon, timestamp: Date.now() });
+            setTelemetry(prev => ({
+              ...prev,
+              lat: data.telemetry.lat,
+              lng: data.telemetry.lon,
+            }));
+            setGpsPrioritySource("OCR");
             updateResolvedGps(undefined, undefined, data.telemetry.lat, data.telemetry.lon);
           }
           // Stream real-time OCR readings to Feed Console card
