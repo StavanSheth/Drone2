@@ -188,6 +188,7 @@ class TrackingService:
             "stream_id": stream_id,
             "frame_index": tracking_result["frame_index"],
             "timestamp": tracking_result["timestamp"],
+            "total_detected": tracking_result["human_count"],
             "human_count": tracking_result["human_count"],
             "active_track_count": tracking_result["active_track_count"],
             "unique_tracks_seen": tracking_result["unique_tracks_seen"],

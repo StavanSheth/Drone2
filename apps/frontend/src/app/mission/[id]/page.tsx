@@ -126,6 +126,7 @@ export default function MissionDashboard() {
   }[]>([]);
   // Detection Audit History (for report and live inspection)
   const [detectionAuditTrail, setDetectionAuditTrail] = useState<{
+    timestamp?: number;
     time: string;
     count: number;
     maxConf: number;
@@ -667,8 +668,12 @@ export default function MissionDashboard() {
         });
         if (res.ok) {
           const data = await res.json();
-          // Read flattened response: total_detected and detections[] at top level
-          const count = data.total_detected ?? data.human_count ?? 0;
+          // Read count with robust fallback across both tracking and single-frame endpoints
+          const count = (typeof data.total_detected === "number" && data.total_detected > 0)
+            ? data.total_detected
+            : (typeof data.human_count === "number" && data.human_count > 0)
+              ? data.human_count
+              : (Array.isArray(data.detections) ? data.detections.length : 0);
           setHumanCount(count);
           if (data.active_track_count !== undefined && data.active_track_count !== null) {
             setActiveTrackCount(data.active_track_count);
@@ -743,12 +748,14 @@ export default function MissionDashboard() {
               humanIdsStr
             );
             setDetectionAuditTrail(prev => {
+              const now = Date.now();
               const lastEvt = prev[prev.length - 1];
               // Avoid duplicate logs within 2 seconds
-              if (lastEvt && (Date.now() - new Date("1970-01-01T" + lastEvt.time).getTime() < 2000)) return prev;
+              if (lastEvt && lastEvt.timestamp && (now - lastEvt.timestamp < 2000)) return prev;
               return [
                 ...prev,
                 {
+                  timestamp: now,
                   time: new Date().toLocaleTimeString(),
                   count,
                   maxConf,
