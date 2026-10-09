@@ -103,6 +103,14 @@ export default function MissionDashboard() {
   const [videoSize, setVideoSize] = useState({ w: 1280, h: 720 });
   const [selectedModel, setSelectedModel] = useState<"V2" | "YOLOv8m" | "version3" | "AgriCNN">("V2");
 
+  // Payload Dispenser Controls State
+  const [isPayloadModalOpen, setIsPayloadModalOpen] = useState<boolean>(false);
+  const [payloadSourceMode, setPayloadSourceMode] = useState<"SIMULATION" | "SERIAL">("SIMULATION");
+  const [payloadDelayMs, setPayloadDelayMs] = useState<number>(2000); // 1000ms to Infinity
+  const [payloadCustomDelayInput, setPayloadCustomDelayInput] = useState<string>("2000");
+  const [payloadTargetCount, setPayloadTargetCount] = useState<number>(5); // 1 to 10
+  const [isAutoDropping, setIsAutoDropping] = useState<boolean>(false);
+
   // Serial & COM state
   const [availablePorts, setAvailablePorts] = useState<{port: string, description: string, active: boolean}[]>([]);
   const [selectedPort, setSelectedPort] = useState<string>("COM3");
@@ -583,12 +591,86 @@ export default function MissionDashboard() {
             if (latest && (latest.includes("LAT") || latest.includes("BATT") || latest.includes("OBJ"))) {
               addActivityLog("COM_SYNC", latest.replace(/\[.*?\]\s*/, ""), "#f59e0b");
             }
+            if (payloadSourceMode === "SERIAL" && latest) {
+              const match = latest.match(/(?:payload|drop|delivered)[^\d]*(\d+)/i);
+              if (match) {
+                const count = parseInt(match[1], 10);
+                if (!isNaN(count) && count >= 0 && count <= 10) {
+                  setTelemetry(prev => {
+                    if (prev.delivered !== count) {
+                      addActivityLog("SERIAL_PAYLOAD", `HARDWARE COM SYNC: PAYLOAD DROPPED UPDATED TO ${count}`, "#f59e0b");
+                      return { ...prev, delivered: count };
+                    }
+                    return prev;
+                  });
+                }
+              }
+            }
           }
         }
       } catch {}
     }, 1200);
     return () => clearInterval(interval);
-  }, [addActivityLog]);
+  }, [addActivityLog, payloadSourceMode]);
+
+  // Payload Dispenser Auto-Drop Timer (Simulation Mode)
+  useEffect(() => {
+    if (!isAutoDropping || payloadSourceMode !== "SIMULATION") return;
+    if (!isFinite(payloadDelayMs) || payloadDelayMs < 1000) return;
+
+    const timer = setInterval(() => {
+      setTelemetry(prev => {
+        if (prev.delivered >= payloadTargetCount || prev.delivered >= 10) {
+          setIsAutoDropping(false);
+          addActivityLog(
+            "PAYLOAD_COMPLETED",
+            `TARGET DELIVERY COMPLETE: ${prev.delivered}/${payloadTargetCount} PAYLOADS DISPENSED`,
+            "#10b981"
+          );
+          return prev;
+        }
+        const nextDelivered = Math.min(10, prev.delivered + 1);
+        addActivityLog(
+          "PAYLOAD_RELEASE",
+          `PAYLOAD DISPENSER: RELEASED UNIT #${nextDelivered} (TARGET: ${payloadTargetCount}, DELAY: ${payloadDelayMs}ms)`,
+          "#f45b0b"
+        );
+        if (nextDelivered >= payloadTargetCount || nextDelivered >= 10) {
+          setIsAutoDropping(false);
+          addActivityLog(
+            "PAYLOAD_COMPLETED",
+            `TARGET DELIVERY REACHED: ${nextDelivered}/${payloadTargetCount} PAYLOADS DISPENSED`,
+            "#10b981"
+          );
+        }
+        return { ...prev, delivered: nextDelivered };
+      });
+    }, payloadDelayMs);
+
+    return () => clearInterval(timer);
+  }, [isAutoDropping, payloadSourceMode, payloadDelayMs, payloadTargetCount, addActivityLog]);
+
+  const handleDropSinglePayload = () => {
+    setTelemetry(prev => {
+      if (prev.delivered >= 10) {
+        addActivityLog("PAYLOAD_LIMIT", "MAXIMUM CAPACITY REACHED: 10/10 PAYLOADS ALREADY DROPPED", "#ef4444");
+        return prev;
+      }
+      const nextDelivered = prev.delivered + 1;
+      addActivityLog(
+        "PAYLOAD_RELEASE",
+        `MANUAL RELEASE: DROPPED UNIT #${nextDelivered} (TOTAL: ${nextDelivered}/10)`,
+        "#f45b0b"
+      );
+      return { ...prev, delivered: nextDelivered };
+    });
+  };
+
+  const handleResetPayloads = () => {
+    setIsAutoDropping(false);
+    setTelemetry(prev => ({ ...prev, delivered: 0 }));
+    addActivityLog("PAYLOAD_RESET", "PAYLOAD DISPENSER COUNTER RESET TO 0", "#3b82f6");
+  };
 
   // Poll Feed OSD Logs
   useEffect(() => {
@@ -1194,13 +1276,27 @@ export default function MissionDashboard() {
           </div>
 
           {/* Payloads */}
-          <div className="bg-[#202522]/90 border border-white/10 border-l-4 border-l-[#f45b0b] backdrop-blur-[24px] rounded-[8px] p-3 shadow-md flex flex-col justify-between">
-            <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-bold uppercase tracking-wider">
-              <span className="text-[#f45b0b]">{IC.box}</span> {selectedModel === "AgriCNN" ? "PAYLOAD" : "PAYLOADS"}
+          <div 
+            onClick={() => setIsPayloadModalOpen(true)}
+            className="bg-[#202522]/90 border border-white/10 border-l-4 border-l-[#f45b0b] backdrop-blur-[24px] rounded-[8px] p-3 shadow-md flex flex-col justify-between cursor-pointer hover:border-white/20 hover:scale-[1.01] transition-all group"
+            title="Click to configure payload dispenser & release timing"
+          >
+            <div className="flex items-center justify-between text-white/50 text-[10px] font-bold uppercase tracking-wider">
+              <span className="flex items-center gap-1.5">
+                <span className="text-[#f45b0b]">{IC.box}</span> {selectedModel === "AgriCNN" ? "PAYLOAD" : "PAYLOADS"}
+              </span>
+              <span className="text-[9px] text-[#f45b0b] opacity-60 group-hover:opacity-100 font-mono transition-opacity flex items-center gap-1">
+                ⚙ CONFIGURE
+              </span>
             </div>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="font-mono font-bold text-[18px] text-white">{selectedModel === "AgriCNN" ? "5" : telemetry.delivered}</span>
               <span className="text-[11px] font-mono text-[#f45b0b]">{selectedModel === "AgriCNN" ? "L" : "DROPPED"}</span>
+              {isAutoDropping && (
+                <span className="text-[9px] font-mono text-[#10b981] animate-pulse ml-auto bg-[#10b981]/15 px-1.5 py-0.5 rounded border border-[#10b981]/30">
+                  AUTO-DROPPING...
+                </span>
+              )}
             </div>
           </div>
 
@@ -1248,6 +1344,344 @@ export default function MissionDashboard() {
             </div>
           </div>
         </section>
+
+        {/* ── PAYLOAD DISPENSER POPUP MODAL (OPTION A) ── */}
+        {isPayloadModalOpen && (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setIsPayloadModalOpen(false);
+            }}
+          >
+            <div className="w-full max-w-[520px] bg-[#161a1b] border border-white/15 rounded-[12px] p-5 shadow-[0_20px_50px_rgba(0,0,0,0.85)] space-y-4">
+              
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-[#f45b0b]/15 border border-[#f45b0b]/30 flex items-center justify-center text-[#f45b0b]">
+                    {IC.box}
+                  </div>
+                  <div>
+                    <h3 className="text-[13px] font-bold text-white tracking-wide flex items-center gap-2">
+                      PAYLOAD DISPENSER CONTROL
+                      {isAutoDropping && (
+                        <span className="text-[9px] font-mono text-[#10b981] bg-[#10b981]/15 border border-[#10b981]/30 px-1.5 py-0.5 rounded animate-pulse">
+                          ● AUTO-RUNNING
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-[10px] font-mono text-white/50">
+                      MISSION {missionId} // DISPENSER CAPACITY: 10 UNITS
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPayloadModalOpen(false)}
+                  className="w-7 h-7 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Source Mode Toggle (Simulation vs Serial Console) */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-mono font-bold text-white/60 uppercase tracking-wider block">
+                  DATA SOURCE SELECTION
+                </span>
+                <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-[8px] border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPayloadSourceMode("SIMULATION");
+                      addActivityLog("SOURCE_SWITCH", "PAYLOAD DISPENSER SWITCHED TO SIMULATION MODE", "#3b82f6");
+                    }}
+                    className={`py-2 px-3 rounded-[6px] text-[11px] font-bold tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      payloadSourceMode === "SIMULATION"
+                        ? "bg-[#f45b0b] text-white shadow-[0_2px_10px_rgba(244,91,11,0.4)]"
+                        : "text-white/60 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    <span>💻</span> SIMULATION
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPayloadSourceMode("SERIAL");
+                      setIsAutoDropping(false);
+                      addActivityLog("SOURCE_SWITCH", `PAYLOAD DISPENSER SWITCHED TO SERIAL COM CONSOLE (${selectedPort})`, "#f59e0b");
+                    }}
+                    className={`py-2 px-3 rounded-[6px] text-[11px] font-bold tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      payloadSourceMode === "SERIAL"
+                        ? "bg-[#f59e0b] text-white shadow-[0_2px_10px_rgba(245,158,11,0.4)]"
+                        : "text-white/60 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    <span>🔌</span> SERIAL CONSOLE
+                  </button>
+                </div>
+              </div>
+
+              {/* Current Status & Progress Meter */}
+              <div className="bg-white/[0.03] border border-white/10 rounded-[8px] p-3 space-y-2">
+                <div className="flex items-center justify-between font-mono text-[11px]">
+                  <span className="text-white/60">PAYLOAD INVENTORY</span>
+                  <span className="font-bold text-white">
+                    <span className="text-[#f45b0b] text-base">{telemetry.delivered}</span> / 10 DROPPED 
+                    <span className="text-white/40 ml-1.5">({10 - telemetry.delivered} LOADED)</span>
+                  </span>
+                </div>
+                
+                {/* 10-Slot Segmented Dispenser Bar */}
+                <div className="grid grid-cols-10 gap-1.5 pt-1">
+                  {Array.from({ length: 10 }).map((_, slotIdx) => {
+                    const isDropped = slotIdx < telemetry.delivered;
+                    return (
+                      <div
+                        key={slotIdx}
+                        className={`h-2.5 rounded-sm transition-all duration-300 ${
+                          isDropped
+                            ? "bg-[#f45b0b] shadow-[0_0_8px_rgba(244,91,11,0.6)]"
+                            : "bg-white/10 border border-white/5"
+                        }`}
+                        title={`Payload #${slotIdx + 1}: ${isDropped ? "Dropped" : "Loaded"}`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* SIMULATION MODE CONTROLS */}
+              {payloadSourceMode === "SIMULATION" && (
+                <div className="space-y-4">
+                  {/* Option 1: Delay Between Increments */}
+                  <div className="space-y-2 bg-white/[0.02] border border-white/10 rounded-[8px] p-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-mono font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                        <span>⏱</span> OPTION 1: DELAY BETWEEN INCREMENTS
+                      </label>
+                      <span className="text-[10px] font-mono text-[#f45b0b] font-bold">
+                        {isFinite(payloadDelayMs) ? `${payloadDelayMs} ms` : "∞ MANUAL"}
+                      </span>
+                    </div>
+
+                    {/* Quick Preset Chips */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { label: "1000ms (1s)", val: 1000 },
+                        { label: "2500ms (2.5s)", val: 2500 },
+                        { label: "5000ms (5s)", val: 5000 },
+                        { label: "10000ms (10s)", val: 10000 },
+                        { label: "∞ MANUAL", val: Infinity },
+                      ].map(chip => (
+                        <button
+                          key={chip.label}
+                          type="button"
+                          onClick={() => {
+                            setPayloadDelayMs(chip.val);
+                            if (isFinite(chip.val)) {
+                              setPayloadCustomDelayInput(chip.val.toString());
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-[5px] text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                            payloadDelayMs === chip.val
+                              ? "bg-[#f45b0b] text-white shadow-[0_0_10px_rgba(244,91,11,0.4)]"
+                              : "bg-white/[0.05] hover:bg-white/[0.1] text-white/70 border border-white/5"
+                          }`}
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Custom Input */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-[10px] font-mono text-white/50">Custom Delay:</span>
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          min={1000}
+                          step={250}
+                          disabled={!isFinite(payloadDelayMs)}
+                          value={isFinite(payloadDelayMs) ? payloadCustomDelayInput : "MANUAL"}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPayloadCustomDelayInput(val);
+                            const parsed = parseInt(val, 10);
+                            if (!isNaN(parsed) && parsed >= 1000) {
+                              setPayloadDelayMs(parsed);
+                            }
+                          }}
+                          placeholder="Min 1000"
+                          className="w-full bg-black/40 border border-white/10 rounded-[6px] px-2.5 py-1 text-[11px] font-mono text-white placeholder-white/30 outline-none focus:border-[#f45b0b] disabled:opacity-40"
+                        />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-mono text-white/40">
+                          ms
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Option 2: Total Target Dropped Count (1 to 10) */}
+                  <div className="space-y-2 bg-white/[0.02] border border-white/10 rounded-[8px] p-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-mono font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                        <span>🎯</span> OPTION 2: TARGET DROPPED COUNT (1 TO 10)
+                      </label>
+                      <span className="text-[10px] font-mono text-[#10b981] font-bold">
+                        TARGET: {payloadTargetCount} UNITS
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      {/* Stepper [-] [Value] [+] */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setPayloadTargetCount(prev => Math.max(1, prev - 1))}
+                          className="w-8 h-8 rounded-[6px] bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-white font-bold text-base flex items-center justify-center transition-all cursor-pointer"
+                        >
+                          -
+                        </button>
+                        <div className="w-16 h-8 rounded-[6px] bg-black/40 border border-white/10 flex items-center justify-center font-mono font-bold text-[14px] text-white">
+                          {payloadTargetCount}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPayloadTargetCount(prev => Math.min(10, prev + 1))}
+                          className="w-8 h-8 rounded-[6px] bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-white font-bold text-base flex items-center justify-center transition-all cursor-pointer"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      {/* Quick Presets */}
+                      <div className="flex items-center gap-1">
+                        {[1, 3, 5, 8, 10].map(cnt => (
+                          <button
+                            key={cnt}
+                            type="button"
+                            onClick={() => setPayloadTargetCount(cnt)}
+                            className={`w-7 h-7 rounded-[5px] text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                              payloadTargetCount === cnt
+                                ? "bg-[#10b981] text-white shadow-[0_0_8px_rgba(16,185,129,0.4)]"
+                                : "bg-white/[0.05] hover:bg-white/[0.1] text-white/70 border border-white/5"
+                            }`}
+                          >
+                            {cnt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions & Trigger Buttons */}
+                  <div className="grid grid-cols-3 gap-2 pt-1">
+                    {/* Start / Pause Auto Drop */}
+                    <button
+                      type="button"
+                      disabled={!isFinite(payloadDelayMs)}
+                      onClick={() => {
+                        if (isAutoDropping) {
+                          setIsAutoDropping(false);
+                          addActivityLog("PAYLOAD_PAUSE", "AUTO-DROP TIMER PAUSED BY OPERATOR", "#f59e0b");
+                        } else {
+                          if (telemetry.delivered >= payloadTargetCount) {
+                            if (telemetry.delivered >= 10) {
+                              addActivityLog("PAYLOAD_LIMIT", "ALL 10 PAYLOADS ALREADY DROPPED", "#ef4444");
+                              return;
+                            }
+                            setPayloadTargetCount(Math.min(10, telemetry.delivered + 1));
+                          }
+                          setIsAutoDropping(true);
+                          addActivityLog(
+                            "PAYLOAD_START",
+                            `AUTO-DROP ARMED: RELEASING UNTIL ${payloadTargetCount} UNITS AT ${payloadDelayMs}ms INTERVAL`,
+                            "#10b981"
+                          );
+                        }
+                      }}
+                      className={`py-2 px-3 rounded-[6px] text-[11px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md disabled:opacity-40 disabled:cursor-not-allowed ${
+                        isAutoDropping
+                          ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-900/30"
+                          : "bg-[#f45b0b] hover:bg-[#ff6817] text-white shadow-[#f45b0b]/30"
+                      }`}
+                    >
+                      {isAutoDropping ? "⏸ PAUSE" : "▶ START AUTO"}
+                    </button>
+
+                    {/* Single Step Drop */}
+                    <button
+                      type="button"
+                      disabled={telemetry.delivered >= 10}
+                      onClick={handleDropSinglePayload}
+                      className="py-2 px-3 rounded-[6px] bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-white text-[11px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <span>🎯</span> DROP (+1)
+                    </button>
+
+                    {/* Reset Button */}
+                    <button
+                      type="button"
+                      onClick={handleResetPayloads}
+                      className="py-2 px-3 rounded-[6px] bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-[11px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <span>↺</span> RESET (0)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* SERIAL CONSOLE MODE DETAILS */}
+              {payloadSourceMode === "SERIAL" && (
+                <div className="space-y-3 bg-white/[0.02] border border-white/10 rounded-[8px] p-3 font-mono">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-white/60">ACTIVE SERIAL PORT:</span>
+                    <span className="text-[#f59e0b] font-bold">{selectedPort} (115200 BAUD)</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 text-[10px] text-[#10b981] bg-[#10b981]/10 border border-[#10b981]/30 p-2 rounded-[6px]">
+                    <div className="w-2 h-2 rounded-full bg-[#10b981] animate-ping" />
+                    <span>LISTENING FOR HARDWARE TELEMETRY PACKETS ON COM BUS</span>
+                  </div>
+
+                  <div className="text-[10px] text-white/50 space-y-1">
+                    <p>• Micro-controller drops will automatically increment the delivered counter upon UART confirmation.</p>
+                    <p>• Recent Serial Packets: {rawSerialLogs.length} received.</p>
+                  </div>
+
+                  {rawSerialLogs.length > 0 && (
+                    <div className="bg-black/60 rounded p-2 text-[9px] text-white/70 space-y-0.5 max-h-20 overflow-y-auto">
+                      {rawSerialLogs.slice(-3).map((l, idx) => (
+                        <div key={idx} className="truncate text-white/60 font-mono">
+                          {l}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={handleDropSinglePayload}
+                      className="py-1.5 px-3 rounded-[6px] bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-white text-[10px] font-bold tracking-wider uppercase transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>🎯</span> MANUAL OVERRIDE DROP (+1)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetPayloads}
+                      className="py-1.5 px-3 rounded-[6px] bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-[10px] font-bold tracking-wider uppercase transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>↺</span> RESET (0)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        )}
 
         {/* ── 12-COLUMN MAIN WORKSPACE GRID ── */}
         <div className="grid grid-cols-12 gap-4 items-start">
