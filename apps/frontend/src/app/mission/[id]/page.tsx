@@ -57,9 +57,9 @@ export default function MissionDashboard() {
     lng: 0,
     alt: 0,
     vel: 0,
-    batt: 0,
-    voltage: 0,
-    health: 0,
+    batt: 100,
+    voltage: 25.2,
+    health: 98,
     delivered: 0,
     hdop: 0,
     movesLeft: 0,
@@ -185,6 +185,8 @@ export default function MissionDashboard() {
   telemetryRef.current = telemetry;
   const humanCountRef = useRef(humanCount);
   humanCountRef.current = humanCount;
+  const batterySourceModeRef = useRef(batterySourceMode);
+  batterySourceModeRef.current = batterySourceMode;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -832,8 +834,8 @@ export default function MissionDashboard() {
             }
           }
 
-          // 1. Sync Battery with Feed Console OCR
-          if (data.voltage != null) {
+          // 1. Sync Battery with Feed Console OCR (Only when in SERIAL / Live Feed mode)
+          if (batterySourceModeRef.current === "SERIAL" && data.voltage != null) {
             setTelemetry(prev => ({
               ...prev,
               voltage: data.voltage,
@@ -1018,8 +1020,8 @@ export default function MissionDashboard() {
               ].slice(-50);
             });
           }
-          // Update battery telemetry from backend OCR (voltage & calculated percentage)
-          if (data.telemetry?.voltage != null) {
+          // Update battery telemetry from backend OCR (voltage & calculated percentage) only in SERIAL mode
+          if (batterySourceModeRef.current === "SERIAL" && data.telemetry?.voltage != null) {
             setTelemetry(prev => ({
               ...prev,
               voltage: data.telemetry.voltage,
@@ -1563,7 +1565,10 @@ export default function MissionDashboard() {
         <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
           {/* Battery */}
           <div 
-            onClick={() => setIsBatteryModalOpen(true)}
+            onClick={() => {
+              setBatteryStartPercentInput(telemetry.batt.toFixed(0));
+              setIsBatteryModalOpen(true);
+            }}
             className="bg-[#202522]/90 border border-white/10 border-l-4 border-l-[#3b82f6] backdrop-blur-[24px] rounded-[8px] p-3 shadow-md flex flex-col justify-between cursor-pointer hover:border-white/20 hover:scale-[1.01] transition-all group"
             title="Click to configure battery simulation & power management"
           >
@@ -2118,9 +2123,15 @@ export default function MissionDashboard() {
                       type="button"
                       onClick={() => {
                         setBatteryCellConfig("4S");
-                        addActivityLog("CELL_CONFIG", "LiPo CELL PACK SWITCHED TO 4S (14.8V NOMINAL)", "#3b82f6");
+                        if (batterySourceModeRef.current === "SIMULATION") {
+                          const minV = 13.6;
+                          const maxV = 16.8;
+                          const newV = parseFloat((minV + (telemetry.batt / 100) * (maxV - minV)).toFixed(2));
+                          setTelemetry(prev => ({ ...prev, voltage: newV }));
+                        }
+                        addActivityLog("CELL_CONFIG", "LiPo CELL PACK SWITCHED TO 4S (14.8V NOMINAL, FULL: 16.8V, CUTOFF: 13.6V)", "#3b82f6");
                       }}
-                      className={`px-2 py-0.5 rounded transition-all ${
+                      className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
                         batteryCellConfig === "4S" ? "bg-[#3b82f6] text-white font-bold" : "text-white/50 hover:text-white"
                       }`}
                     >
@@ -2130,9 +2141,15 @@ export default function MissionDashboard() {
                       type="button"
                       onClick={() => {
                         setBatteryCellConfig("6S");
-                        addActivityLog("CELL_CONFIG", "LiPo CELL PACK SWITCHED TO 6S (22.2V NOMINAL)", "#3b82f6");
+                        if (batterySourceModeRef.current === "SIMULATION") {
+                          const minV = 20.4;
+                          const maxV = 25.2;
+                          const newV = parseFloat((minV + (telemetry.batt / 100) * (maxV - minV)).toFixed(2));
+                          setTelemetry(prev => ({ ...prev, voltage: newV }));
+                        }
+                        addActivityLog("CELL_CONFIG", "LiPo CELL PACK SWITCHED TO 6S (22.2V NOMINAL, FULL: 25.2V, CUTOFF: 20.4V)", "#3b82f6");
                       }}
-                      className={`px-2 py-0.5 rounded transition-all ${
+                      className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
                         batteryCellConfig === "6S" ? "bg-[#3b82f6] text-white font-bold" : "text-white/50 hover:text-white"
                       }`}
                     >
