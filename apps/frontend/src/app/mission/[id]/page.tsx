@@ -826,7 +826,7 @@ export default function MissionDashboard() {
           if (data.logs && data.logs.length > 0) {
             setOsdLogs(data.logs);
             const latest = data.logs[data.logs.length - 1];
-            if (latest && (latest.includes("ALT") || latest.includes("NAV") || latest.includes("OBJ"))) {
+            if (latest && (latest.includes("ALT") || latest.includes("NAV") || latest.includes("OBJ") || latest.includes("BATT") || latest.includes("GPS"))) {
               addActivityLog("FEED_OSD", latest.replace(/\[.*?\]\s*/, ""), "#3b82f6");
             }
           }
@@ -993,19 +993,29 @@ export default function MissionDashboard() {
               ].slice(-50);
             });
           }
-          // Update battery telemetry from backend
+          // Update battery telemetry from backend OCR (voltage & calculated percentage)
           if (data.telemetry?.voltage != null) {
             setTelemetry(prev => ({
               ...prev,
               voltage: data.telemetry.voltage,
-              batt: data.telemetry.percentage ?? prev.batt
+              batt: data.telemetry.percentage != null ? data.telemetry.percentage : prev.batt
             }));
           }
-          // Update OCR GPS if available
-          if (data.telemetry?.lat && data.telemetry?.lon) {
+          // Update OCR GPS from bottom-right OSD
+          if (
+            data.telemetry?.lat !== undefined &&
+            data.telemetry?.lon !== undefined &&
+            data.telemetry?.lat !== null &&
+            data.telemetry?.lon !== null
+          ) {
             setOcrGpsData({ lat: data.telemetry.lat, lng: data.telemetry.lon, timestamp: Date.now() });
             updateResolvedGps(undefined, undefined, data.telemetry.lat, data.telemetry.lon);
-            addActivityLog("OCR_GPS", `FEED OCR COORDINATES: ${data.telemetry.lat.toFixed(5)}N, ${data.telemetry.lon.toFixed(5)}W`, "#10b981");
+          }
+          // Stream real-time OCR readings to Feed Console card
+          if (Array.isArray(data.osd_text) && data.osd_text.length > 0) {
+            const timeStr = new Date().toLocaleTimeString();
+            const formatted = data.osd_text.map((t: string) => `[${timeStr}] ${t}`);
+            setOsdLogs(prev => [...prev, ...formatted].slice(-200));
           }
         }
       } catch (err) {

@@ -11,13 +11,23 @@ try:
 except ImportError:
     YOLO = None
 
-try:
-    import pytesseract
-except ImportError:
-    pytesseract = None
+_ocr_engine = None
+_last_voltage = 21.6
+_last_lat = 0.0
+_last_lon = 0.0
+_last_osd_lines: List[str] = []
+
+def get_ocr_engine():
+    global _ocr_engine
+    if _ocr_engine is None:
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+            _ocr_engine = RapidOCR()
+        except Exception:
+            _ocr_engine = None
+    return _ocr_engine
 
 _cached_models: Dict[str, Any] = {}
-_last_voltage = 25.2
 
 def get_model(model_name: str = "V2"):
     global _cached_models
@@ -56,63 +66,91 @@ def calculate_battery_percentage(voltage: Optional[float]) -> float:
     if voltage <= 18.0:
         return 0.0
     percentage = (voltage - 18.0) / 7.2 * 100.0
-    return round(percentage, 2)
+    return round(percentage, 1)
 
 def extract_telemetry(frame: np.ndarray) -> Dict[str, Any]:
-    global _last_voltage
-    data = {"voltage": _last_voltage, "lat": None, "lon": None}
-    if pytesseract is None:
-        if _last_voltage > 18.2:
-            _last_voltage -= 0.005
-        data["voltage"] = round(_last_voltage, 2)
+    global _last_voltage, _last_lat, _last_lon, _last_osd_lines
+    data = {
+        "voltage": _last_voltage,
+        "percentage": calculate_battery_percentage(_last_voltage),
+        "lat": _last_lat,
+        "lon": _last_lon,
+    }
+
+    ocr = get_ocr_engine()
+    if ocr is None:
         return data
 
     try:
         h, w = frame.shape[:2]
-        v_roi = frame[0:int(h*0.15), 0:int(w*0.30)]
-        gps_roi = frame[int(h*0.75):h, 0:w]
+        # Crop bottom-right quadrant where battery voltage and lat/long OSD are located
+        roi = frame[int(h * 0.55):h, int(w * 0.55):w]
+        result, _ = ocr(roi)
+        if not result:
+            return data
 
-        def get_text(img, config):
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            gray = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-            return pytesseract.image_to_string(thresh, config=config)
+        detected_lines: List[str] = []
+        parsed_voltage: Optional[float] = None
+        parsed_lat: Optional[float] = None
+        parsed_lon: Optional[float] = None
 
-        v_config = r'--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789.V'
-        v_text = get_text(v_roi, v_config)
-        v_match = re.search(r'(\d{1,2}\.\d{1,2})', v_text)
-        if v_match:
-            v_val = float(v_match.group(1))
-            if 10.0 <= v_val <= 26.0:
-                _last_voltage = v_val
-                data["voltage"] = v_val
+        # Sort detected text boxes from top to bottom
+        sorted_items = sorted(result, key=lambda x: min(pt[1] for pt in x[0]))
+        for box, text, score in sorted_items:
+            ascii_text = ''.join(c for c in text if ord(c) < 128).strip()
+            clean = ascii_text.replace('o', '0').replace('O', '0').strip()
+            if not clean:
+                continue
 
-        gps_config = r'--oem 3 --psm 11'
-        gps_text = get_text(gps_roi, gps_config)
-        lat_match = re.search(r'Lat\s*[:]?\s*(-?\d{1,3}\.\d+)', gps_text, re.I)
-        lon_match = re.search(r'L[on|ng]\s*[:]?\s*(-?\d{1,3}\.\d+)', gps_text, re.I)
-        if lat_match:
-            data["lat"] = float(lat_match.group(1))
-        if lon_match:
-            data["lon"] = float(lon_match.group(1))
+            # Check for voltage e.g. "21.6", "21.6 Volt", "21.6V"
+            v_match = re.search(r'(\d{1,2}\.\d{1,2})', clean)
+            if v_match and parsed_voltage is None:
+                v_val = float(v_match.group(1))
+                if 10.0 <= v_val <= 30.0:
+                    parsed_voltage = v_val
+                    continue
+
+            # Check for GPS coordinates (e.g. 0.0000000, 17.558500, 78.395900)
+            coord_str = re.sub(r'^[Il1|](0\.\d+)', r'\1', clean)
+            coord_match = re.search(r'(-?\d{1,3}\.\d{4,8})', coord_str)
+            if coord_match:
+                coord_val = float(coord_match.group(1))
+                if parsed_lat is None:
+                    parsed_lat = coord_val
+                elif parsed_lon is None:
+                    parsed_lon = coord_val
+
+        if parsed_voltage is not None:
+            _last_voltage = parsed_voltage
+            data["voltage"] = parsed_voltage
+            data["percentage"] = calculate_battery_percentage(parsed_voltage)
+            detected_lines.append(f"[OSD] BATT: {parsed_voltage:.1f}V ({data['percentage']}%)")
+
+        if parsed_lat is not None:
+            _last_lat = parsed_lat
+            data["lat"] = parsed_lat
+        if parsed_lon is not None:
+            _last_lon = parsed_lon
+            data["lon"] = parsed_lon
+
+        if parsed_lat is not None and parsed_lon is not None:
+            detected_lines.append(f"[OSD] GPS: LAT {parsed_lat:.6f} | LON {parsed_lon:.6f}")
+        elif parsed_lat is not None:
+            detected_lines.append(f"[OSD] LAT: {parsed_lat:.6f}")
+
+        if detected_lines:
+            _last_osd_lines = detected_lines
+
     except Exception:
         pass
+
     return data
 
 def extract_osd_text(frame: np.ndarray) -> List[str]:
-    if pytesseract is None:
-        return []
-    try:
-        h, w = frame.shape[:2]
-        osd_bottom = frame[int(h * 0.70):h, 0:w]
-        gray = cv2.cvtColor(osd_bottom, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-        raw_text = pytesseract.image_to_string(thresh, config=r'--oem 3 --psm 6')
-        lines = [line.strip() for line in raw_text.splitlines() if line.strip() and len(line.strip()) > 2]
-        return lines
-    except Exception:
-        return []
+    global _last_osd_lines
+    if not _last_osd_lines:
+        extract_telemetry(frame)
+    return list(_last_osd_lines)
 
 def get_human_class_ids(model: Any, class_names: Optional[List[str]] = None) -> List[int]:
     if model is None or not hasattr(model, "names"):
