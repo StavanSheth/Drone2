@@ -117,6 +117,7 @@ export default function MissionDashboard() {
   const [batteryDrainDelayMs, setBatteryDrainDelayMs] = useState<number>(3000); // 500ms to Infinity
   const [batteryCustomDrainInput, setBatteryCustomDrainInput] = useState<string>("3000");
   const [batteryDrainStep, setBatteryDrainStep] = useState<number>(1); // 0.5%, 1%, 2%, 5%
+  const [batteryTargetPercent, setBatteryTargetPercent] = useState<number>(20); // 0% to 100% target discharge level in % format
   const [isAutoDraining, setIsAutoDraining] = useState<boolean>(false);
   const [batteryCellConfig, setBatteryCellConfig] = useState<"4S" | "6S">("6S");
   const [lowBatteryRthThreshold, setLowBatteryRthThreshold] = useState<number>(20); // 10% to 40%
@@ -723,23 +724,33 @@ export default function MissionDashboard() {
     addActivityLog("PAYLOAD_RESET", "PAYLOAD DISPENSER COUNTER RESET TO 0", "#3b82f6");
   };
 
-  // Battery Auto-Drain Timer (Simulation Mode)
+  // Battery Auto-Drain Timer (Simulation Mode: AND Operation between Option 1 Delay & Option 2 Target % Format)
   useEffect(() => {
     if (!isAutoDraining || batterySourceMode !== "SIMULATION") return;
     if (!isFinite(batteryDrainDelayMs) || batteryDrainDelayMs < 500) return;
 
     const timer = setInterval(() => {
       setTelemetry(prev => {
-        if (prev.batt <= 0) {
+        if (prev.batt <= batteryTargetPercent || prev.batt <= 0) {
           setIsAutoDraining(false);
-          addActivityLog("BATT_DEPLETED", "BATTERY FULLY DEPLETED (0.0%): SYSTEM SHUTDOWN IMMINENT", "#ef4444");
-          return { ...prev, batt: 0, voltage: batteryCellConfig === "6S" ? 20.4 : 13.6 };
+          addActivityLog(
+            "BATT_TARGET_REACHED",
+            `TARGET DISCHARGE REACHED: BATTERY LEVEL AT ${prev.batt.toFixed(1)}% (TARGET: ${batteryTargetPercent}%)`,
+            "#10b981"
+          );
+          return prev;
         }
 
-        const nextBatt = Math.max(0, parseFloat((prev.batt - batteryDrainStep).toFixed(1)));
+        const nextBatt = Math.max(batteryTargetPercent, Math.max(0, parseFloat((prev.batt - batteryDrainStep).toFixed(1))));
         const minV = batteryCellConfig === "6S" ? 20.4 : 13.6;
         const maxV = batteryCellConfig === "6S" ? 25.2 : 16.8;
         const nextVoltage = parseFloat((minV + (nextBatt / 100) * (maxV - minV)).toFixed(2));
+
+        addActivityLog(
+          "BATT_DRAIN",
+          `BATTERY DISCHARGE: -${batteryDrainStep}% DECREASE -> ${nextBatt.toFixed(1)}% (TARGET: ${batteryTargetPercent}%, INTERVAL: ${batteryDrainDelayMs}ms)`,
+          "#3b82f6"
+        );
 
         if (nextBatt <= lowBatteryRthThreshold && !rthTriggered) {
           setRthTriggered(true);
@@ -750,9 +761,13 @@ export default function MissionDashboard() {
           );
         }
 
-        if (nextBatt <= 0) {
+        if (nextBatt <= batteryTargetPercent || nextBatt <= 0) {
           setIsAutoDraining(false);
-          addActivityLog("BATT_DEPLETED", "BATTERY EXHAUSTED: LANDING COMPLETE", "#ef4444");
+          addActivityLog(
+            "BATT_TARGET_REACHED",
+            `TARGET DISCHARGE REACHED: BATTERY AT ${nextBatt.toFixed(1)}% (TARGET: ${batteryTargetPercent}%)`,
+            "#10b981"
+          );
         }
 
         return { ...prev, batt: nextBatt, voltage: nextVoltage };
@@ -760,7 +775,7 @@ export default function MissionDashboard() {
     }, batteryDrainDelayMs);
 
     return () => clearInterval(timer);
-  }, [isAutoDraining, batterySourceMode, batteryDrainDelayMs, batteryDrainStep, batteryCellConfig, lowBatteryRthThreshold, rthTriggered, addActivityLog]);
+  }, [isAutoDraining, batterySourceMode, batteryDrainDelayMs, batteryDrainStep, batteryTargetPercent, batteryCellConfig, lowBatteryRthThreshold, rthTriggered, addActivityLog]);
 
   const handleSetBatteryPercentage = (percent: number) => {
     const clamped = Math.max(0, Math.min(100, parseFloat(percent.toFixed(1))));
@@ -1964,7 +1979,7 @@ export default function MissionDashboard() {
                       BATTERY & POWER MANAGEMENT
                       {isAutoDraining && (
                         <span className="text-[9px] font-mono text-[#ef4444] bg-[#ef4444]/15 border border-[#ef4444]/30 px-1.5 py-0.5 rounded animate-pulse">
-                          ● DRAINING (-{batteryDrainStep}% / {batteryDrainDelayMs}ms)
+                          ● DRAINING (-{batteryDrainStep}% / {batteryDrainDelayMs}ms → {batteryTargetPercent}%)
                         </span>
                       )}
                       {telemetry.batt <= lowBatteryRthThreshold && (
@@ -2125,24 +2140,24 @@ export default function MissionDashboard() {
               {/* SIMULATION MODE CONTROLS */}
               {batterySourceMode === "SIMULATION" && (
                 <div className="space-y-3">
-                  {/* Option 1: Discharge Simulation with Configurable Drain Speed */}
+                  {/* Option 1: Delay Between Decrements */}
                   <div className="space-y-2 bg-white/[0.02] border border-white/10 rounded-[8px] p-3">
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] font-mono font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
-                        <span>⏱</span> OPTION 1: DISCHARGE SIMULATION RATE
+                        <span>⏱</span> OPTION 1: DELAY BETWEEN DECREMENTS
                       </label>
                       <span className="text-[10px] font-mono text-[#3b82f6] font-bold">
-                        {isFinite(batteryDrainDelayMs) ? `-${batteryDrainStep}% EVERY ${batteryDrainDelayMs}ms` : "MANUAL ONLY"}
+                        {isFinite(batteryDrainDelayMs) ? `-${batteryDrainStep}% EVERY ${batteryDrainDelayMs}ms` : "∞ MANUAL"}
                       </span>
                     </div>
 
                     {/* Quick Delay Presets */}
                     <div className="flex flex-wrap items-center gap-1.5">
                       {[
-                        { label: "500ms (Rapid)", val: 500 },
                         { label: "1000ms (1s)", val: 1000 },
-                        { label: "3000ms (3s)", val: 3000 },
+                        { label: "2500ms (2.5s)", val: 2500 },
                         { label: "5000ms (5s)", val: 5000 },
+                        { label: "10000ms (10s)", val: 10000 },
                         { label: "∞ MANUAL", val: Infinity },
                       ].map(chip => (
                         <button
@@ -2165,10 +2180,10 @@ export default function MissionDashboard() {
                       ))}
                     </div>
 
-                    {/* Custom Delay Input & Drain Step */}
+                    {/* Custom Delay Input & Decrement Step in % Format */}
                     <div className="flex items-center gap-3 pt-1">
                       <div className="flex-1 flex items-center gap-2">
-                        <span className="text-[10px] font-mono text-white/50">Interval:</span>
+                        <span className="text-[10px] font-mono text-white/50">Custom Delay:</span>
                         <div className="relative flex-1">
                           <input
                             type="number"
@@ -2193,9 +2208,9 @@ export default function MissionDashboard() {
                         </div>
                       </div>
 
-                      {/* Drain Step Selection */}
-                      <div className="flex items-center gap-1.5 font-mono">
-                        <span className="text-[10px] text-white/50">Step:</span>
+                      {/* Decrement Step in % Format */}
+                      <div className="flex items-center gap-1 font-mono">
+                        <span className="text-[10px] text-white/50">Decrease Step:</span>
                         {[0.5, 1, 2, 5].map(stepVal => (
                           <button
                             key={stepVal}
@@ -2203,56 +2218,95 @@ export default function MissionDashboard() {
                             onClick={() => setBatteryDrainStep(stepVal)}
                             className={`px-1.5 py-1 rounded text-[10px] font-bold ${
                               batteryDrainStep === stepVal
-                                ? "bg-[#3b82f6] text-white"
+                                ? "bg-[#3b82f6] text-white shadow"
                                 : "bg-white/5 text-white/60 hover:text-white"
                             }`}
                           >
-                            {stepVal}%
+                            -{stepVal}%
                           </button>
                         ))}
                       </div>
                     </div>
                   </div>
 
-                  {/* Option 2: Manual Battery Percentage Slider & Quick Presets */}
+                  {/* Option 2: Target Discharge Level (Decrease in % Format) */}
                   <div className="space-y-2 bg-white/[0.02] border border-white/10 rounded-[8px] p-3">
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] font-mono font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
-                        <span>🎚</span> OPTION 2: MANUAL BATTERY SLIDER & QUICK PRESETS
+                        <span>🎯</span> OPTION 2: TARGET DISCHARGE LEVEL (DECREASE IN % FORMAT)
                       </label>
-                      <span className="text-[10px] font-mono text-[#10b981] font-bold">
-                        SET: {telemetry.batt.toFixed(1)}%
+                      <span className="text-[10px] font-mono font-bold text-[#10b981]">
+                        TARGET: {batteryTargetPercent}% 
+                        <span className="text-white/50 ml-1.5">
+                          (DECREASE: -{Math.max(0, telemetry.batt - batteryTargetPercent).toFixed(1)}%)
+                        </span>
                       </span>
                     </div>
 
-                    {/* Interactive Range Slider */}
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={0.5}
-                      value={telemetry.batt}
-                      onChange={(e) => handleSetBatteryPercentage(parseFloat(e.target.value))}
-                      className="w-full accent-[#3b82f6] cursor-pointer"
-                    />
-
-                    {/* Quick Level Presets */}
-                    <div className="grid grid-cols-4 gap-1.5 pt-1">
-                      {[
-                        { label: "100% FULL", val: 100, color: "text-[#10b981]" },
-                        { label: "50% NOMINAL", val: 50, color: "text-[#3b82f6]" },
-                        { label: "20% WARNING", val: 20, color: "text-[#f59e0b]" },
-                        { label: "10% CRITICAL", val: 10, color: "text-[#ef4444]" },
-                      ].map(preset => (
+                    <div className="flex items-center justify-between gap-3">
+                      {/* Stepper [-] [Value %] [+] */}
+                      <div className="flex items-center gap-1">
                         <button
-                          key={preset.label}
                           type="button"
-                          onClick={() => handleSetBatteryPercentage(preset.val)}
-                          className={`py-1 rounded-[5px] text-[10px] font-mono font-bold bg-white/[0.05] hover:bg-white/[0.1] border border-white/5 transition-all cursor-pointer ${preset.color}`}
+                          onClick={() => setBatteryTargetPercent(prev => Math.max(0, prev - 5))}
+                          className="w-8 h-8 rounded-[6px] bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-white font-bold text-base flex items-center justify-center transition-all cursor-pointer"
                         >
-                          {preset.label}
+                          -
                         </button>
-                      ))}
+                        <div className="w-20 h-8 rounded-[6px] bg-black/40 border border-white/10 flex items-center justify-center font-mono font-bold text-[13px] text-white">
+                          {batteryTargetPercent}%
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setBatteryTargetPercent(prev => Math.min(100, prev + 5))}
+                          className="w-8 h-8 rounded-[6px] bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-white font-bold text-base flex items-center justify-center transition-all cursor-pointer"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      {/* Quick Percentage Presets */}
+                      <div className="flex flex-wrap items-center gap-1">
+                        {[
+                          { label: "75%", val: 75 },
+                          { label: "50%", val: 50 },
+                          { label: "20% (RTH)", val: 20 },
+                          { label: "10% (Crit)", val: 10 },
+                          { label: "0% (Depleted)", val: 0 },
+                        ].map(preset => (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => setBatteryTargetPercent(preset.val)}
+                            className={`px-2 py-1 rounded-[5px] text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                              batteryTargetPercent === preset.val
+                                ? "bg-[#10b981] text-white shadow-[0_0_8px_rgba(16,185,129,0.4)]"
+                                : "bg-white/[0.05] hover:bg-white/[0.1] text-white/70 border border-white/5"
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Interactive Percentage Slider */}
+                    <div className="pt-1 space-y-1">
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={batteryTargetPercent}
+                        onChange={(e) => setBatteryTargetPercent(parseInt(e.target.value, 10))}
+                        className="w-full accent-[#10b981] cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[9px] font-mono text-white/40">
+                        <span>0% (Empty)</span>
+                        <span>20% (RTH Failsafe)</span>
+                        <span>50% (Nominal)</span>
+                        <span>100% (Full)</span>
+                      </div>
                     </div>
                   </div>
 
@@ -2294,42 +2348,49 @@ export default function MissionDashboard() {
                     </div>
                   </div>
 
-                  {/* Actions & Trigger Buttons */}
-                  <div className="grid grid-cols-3 gap-2 pt-1 font-mono">
-                    {/* Start / Pause Auto Drain */}
+                  {/* Actions & Trigger Buttons (Unified AND Operation of Option 1 & Option 2) */}
+                  <div className="grid grid-cols-4 gap-2 pt-1 font-mono">
+                    {/* Start / Pause Auto Drain (Option 1 Delay AND Option 2 Target % together) */}
                     <button
                       type="button"
-                      disabled={!isFinite(batteryDrainDelayMs) || telemetry.batt <= 0}
+                      disabled={!isFinite(batteryDrainDelayMs) || telemetry.batt <= batteryTargetPercent}
                       onClick={() => {
                         if (isAutoDraining) {
                           setIsAutoDraining(false);
                           addActivityLog("BATT_PAUSE", "BATTERY DISCHARGE SIMULATION PAUSED", "#f59e0b");
                         } else {
+                          if (telemetry.batt <= batteryTargetPercent) {
+                            if (telemetry.batt <= 0) {
+                              addActivityLog("BATT_LIMIT", "BATTERY ALREADY DEPLETED AT 0%", "#ef4444");
+                              return;
+                            }
+                            setBatteryTargetPercent(Math.max(0, Math.floor(telemetry.batt - 10)));
+                          }
                           setIsAutoDraining(true);
                           addActivityLog(
                             "BATT_START",
-                            `BATTERY DISCHARGE SIMULATION ACTIVE: -${batteryDrainStep}% EVERY ${batteryDrainDelayMs}ms`,
+                            `AUTO-DRAIN ARMED: DRAINING UNTIL ${batteryTargetPercent}% AT -${batteryDrainStep}% EVERY ${batteryDrainDelayMs}ms`,
                             "#3b82f6"
                           );
                         }
                       }}
-                      className={`py-2 px-3 rounded-[6px] text-[11px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md disabled:opacity-40 disabled:cursor-not-allowed ${
+                      className={`col-span-2 py-2 px-2.5 rounded-[6px] text-[11px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md disabled:opacity-40 disabled:cursor-not-allowed truncate ${
                         isAutoDraining
                           ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-900/30"
                           : "bg-[#3b82f6] hover:bg-[#2563eb] text-white shadow-blue-900/30"
                       }`}
                     >
-                      {isAutoDraining ? "⏸ PAUSE" : "▶ START DRAIN"}
+                      {isAutoDraining ? "⏸ PAUSE" : `▶ START AUTO-DRAIN (UNTIL ${batteryTargetPercent}%)`}
                     </button>
 
-                    {/* Quick Recharge (+10%) */}
+                    {/* Single Step Drain */}
                     <button
                       type="button"
-                      disabled={telemetry.batt >= 100}
-                      onClick={() => handleSetBatteryPercentage(telemetry.batt + 10)}
-                      className="py-2 px-3 rounded-[6px] bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-white text-[11px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      disabled={telemetry.batt <= 0}
+                      onClick={() => handleSetBatteryPercentage(Math.max(0, telemetry.batt - batteryDrainStep))}
+                      className="py-2 px-2 rounded-[6px] bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-white text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      <span>⚡</span> RECHARGE (+10%)
+                      <span>-</span> DRAIN (-{batteryDrainStep}%)
                     </button>
 
                     {/* Reset Button (100% Full) */}
@@ -2341,7 +2402,7 @@ export default function MissionDashboard() {
                         setRthTriggered(false);
                         addActivityLog("BATT_RESET", "BATTERY RECHARGED TO 100.0% FULL CAPACITY", "#10b981");
                       }}
-                      className="py-2 px-3 rounded-[6px] bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="py-2 px-2 rounded-[6px] bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <span>↺</span> FULL (100%)
                     </button>
