@@ -6,6 +6,7 @@ class DetectionBox(BaseModel):
     name: str
     conf: float
     box: List[float]
+    track_id: Optional[int] = None
 
 class DetectionResult(BaseModel):
     total_detected: int = 0

@@ -11,7 +11,7 @@ from .config.logging import setup_logging
 from .infrastructure.serial.manager import get_serial_manager
 from .pipelines.rag.pipeline import get_rag_pipeline
 from .api.routes import health, telemetry, settings as settings_routes, detections, ai
-from .api.websocket import telemetry as telemetry_ws
+from .api.websocket import telemetry as telemetry_ws, video as video_ws
 from .middleware.request_id import RequestIDMiddleware
 
 @asynccontextmanager
@@ -68,6 +68,7 @@ app.include_router(settings_routes.router)
 app.include_router(detections.router)
 app.include_router(ai.router)
 app.include_router(telemetry_ws.router)
+app.include_router(video_ws.router)
 
 # --- Report Save/List Endpoints ---
 from pydantic import BaseModel

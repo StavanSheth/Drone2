@@ -28,13 +28,16 @@ def get_model(model_name: str = "V2"):
     # Normalize model name to match actual .pt filenames on disk
     model_file_map = {
         "V2": "V2",
+        "v2": "V2",
         "YOLOv8m": "yolov8m",
         "yolov8m": "yolov8m",
         "version3": "version3",
+        "V3": "version3",
+        "v3": "version3",
     }
     file_stem = model_file_map.get(model_name, model_name)
     
-    if model_name not in _cached_models:
+    if model_name not in _cached_models or _cached_models[model_name] is None:
         # Check production then development
         prod_path = settings.MODEL_PROD_DIR / f"{file_stem}.pt"
         dev_path = settings.MODEL_DEV_DIR / f"{file_stem}.pt"
@@ -111,6 +114,70 @@ def extract_osd_text(frame: np.ndarray) -> List[str]:
     except Exception:
         return []
 
+def get_human_class_ids(model: Any, class_names: Optional[List[str]] = None) -> List[int]:
+    if model is None or not hasattr(model, "names"):
+        return []
+    settings = get_settings()
+    target_names = [n.lower() for n in (class_names or settings.HUMAN_CLASS_NAMES)]
+    matched_ids = []
+    for cls_id, name in model.names.items():
+        if name.lower() in target_names:
+            matched_ids.append(int(cls_id))
+    return matched_ids
+
+def detect_humans_in_frame(
+    frame: np.ndarray,
+    mission_id: str = "default",
+    model_name: str = "V2",
+    conf: float = 0.35,
+    save_crops: bool = True
+) -> Dict[str, Any]:
+    settings = get_settings()
+    current_model = get_model(model_name) or get_model("V2")
+    if current_model is None:
+        return {"total_detected": 0, "detections": [], "saved_images": []}
+
+    results = current_model(frame, conf=conf, verbose=False)
+    human_detections = []
+    saved_images = []
+    mission_dir = settings.MISSIONS_DIR / mission_id if save_crops else None
+    if mission_dir:
+        mission_dir.mkdir(parents=True, exist_ok=True)
+
+    human_class_names = [n.lower() for n in settings.HUMAN_CLASS_NAMES]
+
+    for r in results:
+        boxes = r.boxes
+        if boxes is None or len(boxes) == 0:
+            continue
+        for box in boxes:
+            cls = int(box.cls[0])
+            name = current_model.names.get(cls, "unknown")
+            if name.lower() in human_class_names:
+                coords = box.xyxy[0].tolist()
+                b_conf = float(box.conf[0])
+                human_detections.append({
+                    "cls": cls,
+                    "name": name,
+                    "conf": b_conf,
+                    "box": coords
+                })
+                if save_crops and mission_dir:
+                    x1, y1, x2, y2 = map(int, coords)
+                    crop = frame[max(0, y1):min(frame.shape[0], y2), max(0, x1):min(frame.shape[1], x2)]
+                    if crop.size > 0:
+                        filename = f"detect_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
+                        filepath = mission_dir / filename
+                        cv2.imwrite(str(filepath), crop)
+                        saved_images.append(filename)
+
+    return {
+        "total_detected": len(human_detections),
+        "detections": human_detections,
+        "saved_images": saved_images,
+        "raw_results": results
+    }
+
 def detect_humans(image_bytes: bytes, mission_id: str = "default", model_name: str = "V2") -> Dict[str, Any]:
     settings = get_settings()
     
@@ -124,51 +191,19 @@ def detect_humans(image_bytes: bytes, mission_id: str = "default", model_name: s
         return {"error": "Invalid image"}
 
     telemetry_data = extract_telemetry(frame)
-    current_model = get_model(model_name) or get_model("V2")
-    
-    if current_model is None:
-        return {
-            "total_detected": 0,
-            "detections": [],
-            "saved_images": [],
-            "voltage": telemetry_data["voltage"],
-            "percentage": calculate_battery_percentage(telemetry_data["voltage"])
-        }
-
-    results = current_model(frame, conf=0.4)
-    human_detections = []
-    saved_images = []
-    
-    mission_dir = settings.MISSIONS_DIR / mission_id
-    mission_dir.mkdir(parents=True, exist_ok=True)
-    
-    for r in results:
-        boxes = r.boxes
-        for box in boxes:
-            cls = int(box.cls[0])
-            name = current_model.names[cls]
-            if name.lower() in ["person", "human", "target"]:
-                coords = box.xyxy[0].tolist()
-                conf = float(box.conf[0])
-                human_detections.append({
-                    "cls": cls,
-                    "name": name,
-                    "conf": conf,
-                    "box": coords
-                })
-                # Crop and save detected person
-                x1, y1, x2, y2 = map(int, coords)
-                crop = frame[max(0, y1):min(frame.shape[0], y2), max(0, x1):min(frame.shape[1], x2)]
-                if crop.size > 0:
-                    filename = f"detect_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
-                    filepath = mission_dir / filename
-                    cv2.imwrite(str(filepath), crop)
-                    saved_images.append(filename)
+    det_res = detect_humans_in_frame(
+        frame=frame,
+        mission_id=mission_id,
+        model_name=model_name,
+        conf=settings.DETECTION_CONF_THRESHOLD,
+        save_crops=True
+    )
 
     return {
-        "total_detected": len(human_detections),
-        "detections": human_detections,
-        "saved_images": saved_images,
+        "total_detected": det_res["total_detected"],
+        "detections": det_res["detections"],
+        "saved_images": det_res["saved_images"],
         "voltage": telemetry_data["voltage"],
         "percentage": calculate_battery_percentage(telemetry_data["voltage"])
     }
+

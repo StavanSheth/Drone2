@@ -48,7 +48,7 @@ export default function MissionDashboard() {
 
   // Active subview & mode states
   const [activeNavTab, setActiveNavTab] = useState<"LIVE" | "TELEMETRY" | "DETECTIONS" | "PAYLOADS" | "BATTERY" | "LOGS">("LIVE");
-  const [activeBottomSection, setActiveBottomSection] = useState<"ANALYTICS" | "REPORTS" | "LOGS">("LOGS");
+  const [activeBottomSection, setActiveBottomSection] = useState<"ANALYTICS" | "TRACKS" | "REPORTS" | "LOGS">("LOGS");
   const [isPlaying, setIsPlaying] = useState(true);
 
   // Telemetry & Hardware state
@@ -85,10 +85,23 @@ export default function MissionDashboard() {
 
 
   const [humanCount, setHumanCount] = useState(0);
+  const [activeTrackCount, setActiveTrackCount] = useState(0);
+  const [uniqueTracksSeen, setUniqueTracksSeen] = useState(0);
+  const [trackingEnabled, setTrackingEnabled] = useState(true);
+  const frameCounterRef = useRef(0);
+  const [trackHistoryList, setTrackHistoryList] = useState<{
+    track_id: number;
+    class_name: string;
+    conf: number;
+    first_seen: string;
+    last_seen: string;
+    observations: number;
+    box: number[];
+  }[]>([]);
   const [detectionsList, setDetectionsList] = useState<{filename: string, url: string}[]>([]);
-  const [latestDetections, setLatestDetections] = useState<{x?: number, y?: number, w?: number, h?: number, box?: number[], conf?: number}[]>([]);
+  const [latestDetections, setLatestDetections] = useState<{x?: number, y?: number, w?: number, h?: number, box?: number[], conf?: number, track_id?: number | null, class_name?: string}[]>([]);
   const [videoSize, setVideoSize] = useState({ w: 1280, h: 720 });
-  const [selectedModel, setSelectedModel] = useState<"V2" | "YOLOv8m" | "version3" | "AgriCNN">("YOLOv8m");
+  const [selectedModel, setSelectedModel] = useState<"V2" | "YOLOv8m" | "version3" | "AgriCNN">("V2");
 
   // Serial & COM state
   const [availablePorts, setAvailablePorts] = useState<{port: string, description: string, active: boolean}[]>([]);
@@ -135,6 +148,14 @@ export default function MissionDashboard() {
         if (videoRef.current) {
           videoRef.current.srcObject = null;
           videoRef.current.src = url;
+          videoRef.current.onloadedmetadata = () => {
+            if (videoRef.current) {
+              setVideoSize({
+                w: videoRef.current.videoWidth || 1280,
+                h: videoRef.current.videoHeight || 720,
+              });
+            }
+          };
           videoRef.current.play().catch(() => {});
         }
       } else if (file.type.startsWith("image/")) {
@@ -420,6 +441,12 @@ export default function MissionDashboard() {
         videoRef.current.src = "";
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
+          if (videoRef.current) {
+            setVideoSize({
+              w: videoRef.current.videoWidth || 1280,
+              h: videoRef.current.videoHeight || 720,
+            });
+          }
           videoRef.current?.play().catch(() => {});
         };
       }
@@ -599,6 +626,9 @@ export default function MissionDashboard() {
         if (ctx) {
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
+          if (videoSize.w !== video.videoWidth || videoSize.h !== video.videoHeight) {
+            setVideoSize({ w: video.videoWidth, h: video.videoHeight });
+          }
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           base64Image = canvas.toDataURL("image/jpeg", 0.6);
 
@@ -611,6 +641,7 @@ export default function MissionDashboard() {
       }
 
       try {
+        frameCounterRef.current += 1;
         const res = await fetch("http://localhost:8000/analyze-feed", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -618,7 +649,10 @@ export default function MissionDashboard() {
             image_base64: base64Image,
             voltage: telemetry.voltage || null,
             mission_id: sessionFolder,
-            model_name: selectedModel
+            model_name: selectedModel,
+            track: trackingEnabled,
+            stream_id: `stream_${id || "default"}`,
+            frame_index: frameCounterRef.current,
           })
         });
         if (res.ok) {
@@ -626,8 +660,47 @@ export default function MissionDashboard() {
           // Read flattened response: total_detected and detections[] at top level
           const count = data.total_detected ?? data.human_count ?? 0;
           setHumanCount(count);
+          if (data.active_track_count !== undefined && data.active_track_count !== null) {
+            setActiveTrackCount(data.active_track_count);
+          }
+          if (data.unique_tracks_seen !== undefined && data.unique_tracks_seen !== null) {
+            setUniqueTracksSeen(data.unique_tracks_seen);
+          }
           if (Array.isArray(data.detections)) {
             setLatestDetections(data.detections);
+            // Reconcile track history
+            data.detections.forEach((d: any) => {
+              if (d.track_id !== undefined && d.track_id !== null) {
+                setTrackHistoryList(prev => {
+                  const existingIdx = prev.findIndex(item => item.track_id === d.track_id);
+                  const nowStr = new Date().toLocaleTimeString();
+                  if (existingIdx >= 0) {
+                    const updated = [...prev];
+                    updated[existingIdx] = {
+                      ...updated[existingIdx],
+                      conf: d.conf || updated[existingIdx].conf,
+                      last_seen: nowStr,
+                      observations: updated[existingIdx].observations + 1,
+                      box: d.box || updated[existingIdx].box,
+                    };
+                    return updated;
+                  } else {
+                    return [
+                      ...prev,
+                      {
+                        track_id: d.track_id,
+                        class_name: d.class_name || d.name || "person",
+                        conf: d.conf || 0,
+                        first_seen: nowStr,
+                        last_seen: nowStr,
+                        observations: 1,
+                        box: d.box || [0, 0, 0, 0],
+                      }
+                    ];
+                  }
+                });
+              }
+            });
           }
           
           // Also keep track of Agricnn data if selected
@@ -1190,14 +1263,34 @@ export default function MissionDashboard() {
                 }
                 const conf = det.conf || 0;
                 const isAgri = selectedModel === "AgriCNN";
-                const labelText = isAgri ? "CROP" : "HUMAN";
-                const boxColor = "border-[#10b981] shadow-[0_0_10px_rgba(16,185,129,0.4)]";
-                const labelColor = "bg-[#10b981]";
+                const hasTrackId = det.track_id !== undefined && det.track_id !== null;
+
+                const trackColorPalette = [
+                  { border: "border-[#3b82f6] shadow-[0_0_12px_rgba(59,130,246,0.55)]", bg: "bg-[#2563eb]" },
+                  { border: "border-[#10b981] shadow-[0_0_12px_rgba(16,185,129,0.55)]", bg: "bg-[#059669]" },
+                  { border: "border-[#f59e0b] shadow-[0_0_12px_rgba(245,158,11,0.55)]", bg: "bg-[#d97706]" },
+                  { border: "border-[#ec4899] shadow-[0_0_12px_rgba(236,72,153,0.55)]", bg: "bg-[#db2777]" },
+                  { border: "border-[#8b5cf6] shadow-[0_0_12px_rgba(139,92,246,0.55)]", bg: "bg-[#7c3aed]" },
+                  { border: "border-[#06b6d4] shadow-[0_0_12px_rgba(6,182,212,0.55)]", bg: "bg-[#0891b2]" },
+                  { border: "border-[#f97316] shadow-[0_0_12px_rgba(249,115,22,0.55)]", bg: "bg-[#ea580c]" },
+                  { border: "border-[#14b8a6] shadow-[0_0_12px_rgba(20,184,166,0.55)]", bg: "bg-[#0d9488]" },
+                ];
+
+                const colorScheme = hasTrackId
+                  ? trackColorPalette[Math.abs(det.track_id) % trackColorPalette.length]
+                  : { border: "border-[#10b981] shadow-[0_0_10px_rgba(16,185,129,0.4)]", bg: "bg-[#10b981]" };
+
+                const displayName = (det.class_name || det.name || "TARGET").toUpperCase();
+                const labelText = isAgri
+                  ? `CROP ${(conf * 100).toFixed(0)}%`
+                  : hasTrackId
+                  ? `${displayName} #${det.track_id} ${(conf * 100).toFixed(0)}%`
+                  : `${displayName} ${(conf * 100).toFixed(0)}%`;
                 
                 return (
                   <div 
                     key={idx}
-                    className={`absolute border-2 z-10 pointer-events-none rounded transition-all ${boxColor}`}
+                    className={`absolute border-2 z-10 pointer-events-none rounded transition-all ${colorScheme.border}`}
                     style={{
                       left: `${(x / (videoSize.w || 1280)) * 100}%`,
                       top: `${(y / (videoSize.h || 720)) * 100}%`,
@@ -1205,8 +1298,8 @@ export default function MissionDashboard() {
                       height: `${(h / (videoSize.h || 720)) * 100}%`,
                     }}
                   >
-                    <span className={`absolute -top-5 left-0 ${labelColor} text-white text-[9px] font-mono font-bold px-1.5 py-[1px] rounded shadow tracking-wider whitespace-nowrap`}>
-                      {labelText} {(conf * 100).toFixed(0)}%
+                    <span className={`absolute -top-5 left-0 ${colorScheme.bg} text-white text-[9px] font-mono font-bold px-1.5 py-[1px] rounded shadow tracking-wider whitespace-nowrap`}>
+                      {labelText}
                     </span>
                   </div>
                 );
@@ -1222,15 +1315,23 @@ export default function MissionDashboard() {
                 <span className="text-[#ff6415]">{telemetry.lat.toFixed(4)}° N, {telemetry.lng.toFixed(4)}° W</span>
               </div>
 
-              {/* B. Top-Right Telemetry Mini-Cards */}
+              {/* B. Top-Right Telemetry & Tracking Mini-Cards */}
               <div className="absolute top-4 right-4 z-20 flex gap-2">
-                <div className="bg-[#101415]/85 border border-white/10 backdrop-blur-md px-3 py-1.5 rounded-[6px] text-center min-w-[62px]">
+                <div className="bg-[#101415]/85 border border-white/10 backdrop-blur-md px-3 py-1.5 rounded-[6px] text-center min-w-[58px]">
                   <span className="block text-[8px] font-mono font-bold text-white/50 uppercase">ALT</span>
                   <span className="block text-[12px] font-mono font-bold text-white">{telemetry.alt.toFixed(0)}m</span>
                 </div>
-                <div className="bg-[#101415]/85 border border-white/10 backdrop-blur-md px-3 py-1.5 rounded-[6px] text-center min-w-[62px]">
+                <div className="bg-[#101415]/85 border border-white/10 backdrop-blur-md px-3 py-1.5 rounded-[6px] text-center min-w-[58px]">
                   <span className="block text-[8px] font-mono font-bold text-white/50 uppercase">SPD</span>
                   <span className="block text-[12px] font-mono font-bold text-white">{telemetry.vel.toFixed(1)}</span>
+                </div>
+                <div className="bg-[#101415]/85 border border-white/10 backdrop-blur-md px-3 py-1.5 rounded-[6px] text-center min-w-[62px]">
+                  <span className="block text-[8px] font-mono font-bold text-[#10b981] uppercase">ACTIVE</span>
+                  <span className="block text-[12px] font-mono font-bold text-[#10b981]">{activeTrackCount}</span>
+                </div>
+                <div className="bg-[#101415]/85 border border-white/10 backdrop-blur-md px-3 py-1.5 rounded-[6px] text-center min-w-[62px]">
+                  <span className="block text-[8px] font-mono font-bold text-[#3b82f6] uppercase">UNIQUE</span>
+                  <span className="block text-[12px] font-mono font-bold text-[#3b82f6]">{uniqueTracksSeen}</span>
                 </div>
               </div>
 
@@ -1517,7 +1618,7 @@ export default function MissionDashboard() {
 
             {/* 6. ANALYTICS / REPORTS / LOGS SELECTOR */}
             <div className="flex items-center gap-2">
-              {(["ANALYTICS", "REPORTS", "LOGS"] as const).map(sec => (
+              {(["ANALYTICS", "TRACKS", "REPORTS", "LOGS"] as const).map(sec => (
                 <button
                   key={sec}
                   onClick={() => setActiveBottomSection(sec)}
@@ -1527,7 +1628,7 @@ export default function MissionDashboard() {
                       : "bg-[#202522]/90 border border-white/10 text-white/60 hover:text-white hover:bg-white/[0.06]"
                   }`}
                 >
-                  {sec}
+                  {sec === "TRACKS" ? `TRACKS (${uniqueTracksSeen})` : sec}
                 </button>
               ))}
             </div>
@@ -1606,6 +1707,61 @@ export default function MissionDashboard() {
                       <span className="text-[9px] text-white/50 block">RESERVE POWER</span>
                       <span className="text-[16px] font-bold text-[#10b981]">{telemetry.batt.toFixed(0)}%</span>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {activeBottomSection === "TRACKS" && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] font-mono font-bold text-white">BYTETRACK TARGET REGISTRY</span>
+                      <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 px-1.5 py-0.5 rounded">
+                        {activeTrackCount} ACTIVE / {uniqueTracksSeen} TOTAL OBSERVED
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        fetch(`http://localhost:8000/tracking/sessions/${sessionFolder}/stream_${id || "default"}/reset`, { method: "POST" })
+                          .catch(() => {});
+                        setTrackHistoryList([]);
+                        setActiveTrackCount(0);
+                        setUniqueTracksSeen(0);
+                        frameCounterRef.current = 0;
+                      }}
+                      className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-[6px] transition-colors cursor-pointer"
+                    >
+                      RESET TRACKER
+                    </button>
+                  </div>
+
+                  <div className="h-44 overflow-y-auto font-mono text-[10px] space-y-1.5 pr-2">
+                    {trackHistoryList.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-white/40 space-y-1">
+                        <span className="text-base">🎯</span>
+                        <span>NO PERSISTENT TARGET TRACKS RECORDED YET</span>
+                        <span className="text-[9px] text-white/20">TARGETS WILL RECEIVE UNIQUE BYTETRACK IDENTIFIERS AS SOON AS CONFIRMED</span>
+                      </div>
+                    ) : (
+                      trackHistoryList.map(trk => (
+                        <div key={trk.track_id} className="p-2 rounded bg-white/[0.03] border border-white/5 flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-white font-bold bg-[#3b82f6]/20 border border-[#3b82f6]/40 px-2 py-0.5 rounded text-[10px]">
+                              TRACK #{trk.track_id}
+                            </span>
+                            <span className="text-white font-bold uppercase">{trk.class_name}</span>
+                            <span className="text-[9px] bg-[#10b981]/15 text-[#10b981] px-1.5 py-0.5 rounded border border-[#10b981]/30">
+                              CONF: {(trk.conf * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 text-white/50 text-[9px]">
+                            <span>FRAMES: {trk.observations}</span>
+                            <span>FIRST: {trk.first_seen}</span>
+                            <span>LAST: {trk.last_seen}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}

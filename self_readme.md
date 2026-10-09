@@ -1,4 +1,4 @@
-# Trinetra Disaster Drone — Run Guide
+# Disaster Drone — Run Guide
 
 Complete step-by-step instructions to run the backend API server and frontend GUI from CMD.
 
@@ -83,7 +83,7 @@ The project includes a two-stage computer vision pipeline (YOLOv8 + CNN). Previo
 3. Keras 2 crashes when trying to deserialize Keras 3 exclusive configurations.
 
 **Fix Applied:**
-The H5 model file has been successfully patched using an `h5py` script to rewrite its internal JSON config. 
+The H5 model file has been successfully patched using an `h5py` script to rewrite its internal JSON config.
 - `batch_shape` was renamed to `batch_input_shape`.
 - Complex `DTypePolicy` dictionaries were flattened to standard string types (e.g., `'float32'`).
 

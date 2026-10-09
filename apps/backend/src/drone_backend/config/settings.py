@@ -38,6 +38,22 @@ class Settings(BaseModel):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
 
+    # Tracking & ByteTrack
+    TRACKING_ENABLED: bool = True
+    TRACKER_TYPE: str = "bytetrack"
+    TRACKER_CONFIG_PATH: Path = PROJECT_ROOT / "ml" / "configs" / "bytetrack.yaml"
+    TRACKING_MODEL_NAME: str = "V2"
+    HUMAN_CLASS_NAMES: list[str] = ["person", "human", "pedestrian", "pedestrians", "people", "target"]
+    DETECTION_CONF_THRESHOLD: float = 0.25
+    DETECTION_IMGSZ: int = 640
+    MAX_ACTIVE_TRACKING_SESSIONS: int = 20
+    TRACKING_SESSION_IDLE_TIMEOUT_SECONDS: int = 300
+    MAX_PENDING_FRAMES_PER_STREAM: int = 30
+    MAX_VIDEO_UPLOAD_SIZE_BYTES: int = 100 * 1024 * 1024  # 100 MB
+    ALLOWED_VIDEO_FORMATS: list[str] = [".mp4", ".avi", ".mov", ".mkv"]
+    ENABLE_ANNOTATED_VIDEO_OUTPUT: bool = True
+    MAX_TRACK_HISTORY_PER_SESSION: int = 500
+
 _settings = None
 
 def get_settings() -> Settings:

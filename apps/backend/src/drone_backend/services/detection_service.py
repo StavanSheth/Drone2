@@ -1,7 +1,8 @@
 import base64
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from drone_backend.pipelines.cv.detector import detect_humans, extract_osd_text
 from drone_backend.pipelines.cv.preprocessing import decode_image_bytes
+from drone_backend.services.tracking_service import get_tracking_service
 
 _osd_text_logs: List[str] = []
 
@@ -9,9 +10,36 @@ class DetectionService:
     def __init__(self):
         pass
 
-    def analyze_frame(self, image_base64: str, mission_id: str = "default", model_name: str = "V2") -> Dict[str, Any]:
+    def analyze_frame(
+        self,
+        image_base64: str,
+        mission_id: str = "default",
+        model_name: str = "V2",
+        track: bool = False,
+        stream_id: Optional[str] = None,
+        frame_index: Optional[int] = None,
+    ) -> Dict[str, Any]:
         global _osd_text_logs
         from datetime import datetime
+
+        # If tracking is requested and model is not AgriCNN, delegate to TrackingService
+        if track and model_name != "AgriCNN":
+            tracking_svc = get_tracking_service()
+            tracking_res = tracking_svc.process_base64_frame(
+                image_base64=image_base64,
+                mission_id=mission_id,
+                stream_id=stream_id or "default",
+                model_name=model_name,
+                frame_index=frame_index,
+            )
+            # Update OSD logs if present
+            if tracking_res.get("osd_text"):
+                ts = datetime.now().strftime("%H:%M:%S")
+                for line in tracking_res["osd_text"]:
+                    _osd_text_logs.append(f"[{ts}] {line}")
+                while len(_osd_text_logs) > 200:
+                    _osd_text_logs.pop(0)
+            return tracking_res
         
         if image_base64 == "simulated_frame":
             # Return empty detections when no real camera feed
