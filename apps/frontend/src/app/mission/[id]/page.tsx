@@ -111,6 +111,17 @@ export default function MissionDashboard() {
   const [payloadTargetCount, setPayloadTargetCount] = useState<number>(5); // 1 to 10
   const [isAutoDropping, setIsAutoDropping] = useState<boolean>(false);
 
+  // Battery Management & Simulation State
+  const [isBatteryModalOpen, setIsBatteryModalOpen] = useState<boolean>(false);
+  const [batterySourceMode, setBatterySourceMode] = useState<"SIMULATION" | "SERIAL">("SIMULATION");
+  const [batteryDrainDelayMs, setBatteryDrainDelayMs] = useState<number>(3000); // 500ms to Infinity
+  const [batteryCustomDrainInput, setBatteryCustomDrainInput] = useState<string>("3000");
+  const [batteryDrainStep, setBatteryDrainStep] = useState<number>(1); // 0.5%, 1%, 2%, 5%
+  const [isAutoDraining, setIsAutoDraining] = useState<boolean>(false);
+  const [batteryCellConfig, setBatteryCellConfig] = useState<"4S" | "6S">("6S");
+  const [lowBatteryRthThreshold, setLowBatteryRthThreshold] = useState<number>(20); // 10% to 40%
+  const [rthTriggered, setRthTriggered] = useState<boolean>(false);
+
   // Mission Telemetry Graph & Analytics State
   const [telemetryHistory, setTelemetryHistory] = useState<{
     time: string;
@@ -630,12 +641,28 @@ export default function MissionDashboard() {
                 }
               }
             }
+            if (batterySourceMode === "SERIAL" && latest) {
+              const battMatch = latest.match(/(?:batt|battery|b)[^\d]*([\d.]+)/i);
+              const voltMatch = latest.match(/(?:volt|voltage|v)[^\d]*([\d.]+)/i);
+              if (battMatch) {
+                const bVal = parseFloat(battMatch[1]);
+                if (!isNaN(bVal) && bVal >= 0 && bVal <= 100) {
+                  setTelemetry(prev => ({ ...prev, batt: bVal }));
+                }
+              }
+              if (voltMatch) {
+                const vVal = parseFloat(voltMatch[1]);
+                if (!isNaN(vVal) && vVal >= 10 && vVal <= 30) {
+                  setTelemetry(prev => ({ ...prev, voltage: vVal }));
+                }
+              }
+            }
           }
         }
       } catch {}
     }, 1200);
     return () => clearInterval(interval);
-  }, [addActivityLog, payloadSourceMode]);
+  }, [addActivityLog, payloadSourceMode, batterySourceMode]);
 
   // Payload Dispenser Auto-Drop Timer (Simulation Mode)
   useEffect(() => {
@@ -694,6 +721,64 @@ export default function MissionDashboard() {
     setIsAutoDropping(false);
     setTelemetry(prev => ({ ...prev, delivered: 0 }));
     addActivityLog("PAYLOAD_RESET", "PAYLOAD DISPENSER COUNTER RESET TO 0", "#3b82f6");
+  };
+
+  // Battery Auto-Drain Timer (Simulation Mode)
+  useEffect(() => {
+    if (!isAutoDraining || batterySourceMode !== "SIMULATION") return;
+    if (!isFinite(batteryDrainDelayMs) || batteryDrainDelayMs < 500) return;
+
+    const timer = setInterval(() => {
+      setTelemetry(prev => {
+        if (prev.batt <= 0) {
+          setIsAutoDraining(false);
+          addActivityLog("BATT_DEPLETED", "BATTERY FULLY DEPLETED (0.0%): SYSTEM SHUTDOWN IMMINENT", "#ef4444");
+          return { ...prev, batt: 0, voltage: batteryCellConfig === "6S" ? 20.4 : 13.6 };
+        }
+
+        const nextBatt = Math.max(0, parseFloat((prev.batt - batteryDrainStep).toFixed(1)));
+        const minV = batteryCellConfig === "6S" ? 20.4 : 13.6;
+        const maxV = batteryCellConfig === "6S" ? 25.2 : 16.8;
+        const nextVoltage = parseFloat((minV + (nextBatt / 100) * (maxV - minV)).toFixed(2));
+
+        if (nextBatt <= lowBatteryRthThreshold && !rthTriggered) {
+          setRthTriggered(true);
+          addActivityLog(
+            "RTH_FAILSAFE",
+            `CRITICAL BATTERY LEVEL (${nextBatt}% <= ${lowBatteryRthThreshold}% THRESHOLD): RETURN-TO-HOME (RTH) FAILSAFE ENGAGED`,
+            "#ef4444"
+          );
+        }
+
+        if (nextBatt <= 0) {
+          setIsAutoDraining(false);
+          addActivityLog("BATT_DEPLETED", "BATTERY EXHAUSTED: LANDING COMPLETE", "#ef4444");
+        }
+
+        return { ...prev, batt: nextBatt, voltage: nextVoltage };
+      });
+    }, batteryDrainDelayMs);
+
+    return () => clearInterval(timer);
+  }, [isAutoDraining, batterySourceMode, batteryDrainDelayMs, batteryDrainStep, batteryCellConfig, lowBatteryRthThreshold, rthTriggered, addActivityLog]);
+
+  const handleSetBatteryPercentage = (percent: number) => {
+    const clamped = Math.max(0, Math.min(100, parseFloat(percent.toFixed(1))));
+    const minV = batteryCellConfig === "6S" ? 20.4 : 13.6;
+    const maxV = batteryCellConfig === "6S" ? 25.2 : 16.8;
+    const calcV = parseFloat((minV + (clamped / 100) * (maxV - minV)).toFixed(2));
+    setTelemetry(prev => ({ ...prev, batt: clamped, voltage: calcV }));
+    if (clamped > lowBatteryRthThreshold) {
+      setRthTriggered(false);
+    } else if (clamped <= lowBatteryRthThreshold && !rthTriggered) {
+      setRthTriggered(true);
+      addActivityLog(
+        "RTH_FAILSAFE",
+        `MANUAL OVERRIDE: LOW BATTERY (${clamped}% <= ${lowBatteryRthThreshold}%): RETURN-TO-HOME FAILSAFE ARMED`,
+        "#ef4444"
+      );
+    }
+    addActivityLog("BATT_MANUAL", `BATTERY MANUALLY ADJUSTED TO ${clamped}% (${calcV}V ${batteryCellConfig})`, "#3b82f6");
   };
 
   // Sample telemetry data for charts (every 2.5 seconds)
@@ -1012,9 +1097,121 @@ export default function MissionDashboard() {
         doc.text(`• CURRENT GPS LOCATION: ${telemetry.lat.toFixed(6)}° N, ${telemetry.lng.toFixed(6)}° W (PRIORITY: ${gpsPrioritySource})`, 14, y); y += 4.5;
         doc.text(`• BATTERY STATUS: ${telemetry.batt.toFixed(1)}% RESERVE (${telemetry.voltage.toFixed(2)}V 6S LiPo)`, 14, y); y += 4.5;
         doc.text(`• CURRENT ACTIVE HUMAN TARGETS: ${humanCount}`, 14, y); y += 4.5;
-        doc.text(`• MEDICAL PAYLOAD DELIVERIES: ${telemetry.delivered} UNITS COMPLETED`, 14, y); y += 7;
+        doc.text(`• MEDICAL PAYLOAD DELIVERIES: ${telemetry.delivered} UNITS COMPLETED`, 14, y); y += 6;
+
+        // Executive Summary Visual Chart (White background, thick lines, top of Page 1)
+        if (graphCanvasRef.current) {
+          try {
+            const canvas = graphCanvasRef.current;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              // Crisp White Background
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+              // Subtle crisp border
+              ctx.strokeStyle = '#e2e8f0';
+              ctx.lineWidth = 1.5;
+              ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+
+              // Grid lines (light gray)
+              ctx.strokeStyle = '#f1f5f9';
+              ctx.lineWidth = 1;
+              for (let gy = 32; gy < canvas.height - 20; gy += 32) {
+                ctx.beginPath();
+                ctx.moveTo(35, gy);
+                ctx.lineTo(canvas.width - 20, gy);
+                ctx.stroke();
+              }
+
+              // Axes labels / Title
+              ctx.fillStyle = '#0f172a';
+              ctx.font = 'bold 12px monospace';
+              ctx.fillText('MISSION TELEMETRY & OPERATIONS TIMELINE', 38, 22);
+
+              const points = telemetryHistory.length > 1 ? telemetryHistory : [
+                { humans: 0, payloads: 0, battery: 96, alt: 0 },
+                { humans: humanCount, payloads: telemetry.delivered, battery: telemetry.batt, alt: telemetry.alt }
+              ];
+              const plotW = canvas.width - 70;
+              const plotH = canvas.height - 65;
+              const startX = 45;
+              const startY = 35;
+
+              // Battery line (vibrant blue, thick)
+              ctx.strokeStyle = '#2563eb';
+              ctx.lineWidth = 3.5;
+              ctx.beginPath();
+              points.forEach((pt, i) => {
+                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
+                const py = startY + plotH - (Math.max(0, Math.min(100, pt.battery)) / 100) * plotH;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              });
+              ctx.stroke();
+
+              // Humans line (rich green, thick)
+              ctx.strokeStyle = '#059669';
+              ctx.lineWidth = 3.8;
+              ctx.beginPath();
+              points.forEach((pt, i) => {
+                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
+                const py = startY + plotH - (Math.max(0, Math.min(10, pt.humans)) / 10) * plotH;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              });
+              ctx.stroke();
+
+              // Payloads line (vibrant orange, thick)
+              ctx.strokeStyle = '#ea580c';
+              ctx.lineWidth = 3.8;
+              ctx.beginPath();
+              points.forEach((pt, i) => {
+                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
+                const py = startY + plotH - (Math.max(0, Math.min(10, pt.payloads)) / 10) * plotH;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              });
+              ctx.stroke();
+
+              // Altitude line (deep purple, dashed, thick)
+              ctx.strokeStyle = '#9333ea';
+              ctx.lineWidth = 3.2;
+              ctx.setLineDash([6, 4]);
+              ctx.beginPath();
+              points.forEach((pt, i) => {
+                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
+                const py = startY + plotH - (Math.max(0, Math.min(100, pt.alt)) / 100) * plotH;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              });
+              ctx.stroke();
+              ctx.setLineDash([]);
+
+              // Y-Axis markers (Dark slate)
+              ctx.fillStyle = '#64748b';
+              ctx.font = 'bold 9px monospace';
+              ctx.fillText('10', 16, startY + 5);
+              ctx.fillText('5', 20, startY + plotH / 2 + 3);
+              ctx.fillText('0', 20, startY + plotH);
+              ctx.fillText('100', canvas.width - 24, startY + 5);
+              ctx.fillText('50', canvas.width - 20, startY + plotH / 2 + 3);
+              ctx.fillText('0', canvas.width - 15, startY + plotH);
+
+              // Legend on canvas (Bold and clear)
+              ctx.font = 'bold 10px monospace';
+              ctx.fillStyle = '#059669'; ctx.fillText('● HUMANS (0-10)', canvas.width - 430, 22);
+              ctx.fillStyle = '#ea580c'; ctx.fillText('● PAYLOADS (0-10)', canvas.width - 300, 22);
+              ctx.fillStyle = '#2563eb'; ctx.fillText('● BATT % (0-100)', canvas.width - 170, 22);
+              ctx.fillStyle = '#9333ea'; ctx.fillText('● ALT (m)', canvas.width - 65, 22);
+
+              const chartImg = canvas.toDataURL('image/png');
+              doc.addImage(chartImg, 'PNG', 12, y, 186, 52);
+              y += 56;
+            }
+          } catch (e) {
+            console.warn('Could not embed chart in PDF:', e);
+          }
+        }
 
         // 2. Human Detection Audit Trail
+        if (y > 250) { doc.addPage(); y = 15; }
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.text("2. HUMAN DETECTION AUDIT TRAIL (CHRONOLOGICAL FROM ACQUISITION)", 10, y);
@@ -1080,104 +1277,6 @@ export default function MissionDashboard() {
             doc.text(`  > ${o}`, 14, y);
             y += 3.8;
           });
-        }
-
-        // 5. Mission Operations & Telemetry Timeline Graph Summary
-        if (graphCanvasRef.current) {
-          try {
-            const canvas = graphCanvasRef.current;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.fillStyle = '#141819';
-              ctx.fillRect(0, 0, canvas.width, canvas.height);
-              
-              // Grid lines
-              ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-              ctx.lineWidth = 1;
-              for (let gy = 30; gy < canvas.height - 25; gy += 35) {
-                ctx.beginPath();
-                ctx.moveTo(40, gy);
-                ctx.lineTo(canvas.width - 20, gy);
-                ctx.stroke();
-              }
-
-              // Axes labels
-              ctx.fillStyle = '#ffffff';
-              ctx.font = 'bold 11px monospace';
-              ctx.fillText('MISSION TELEMETRY & OPERATIONS TIMELINE', 40, 20);
-
-              const points = telemetryHistory.length > 1 ? telemetryHistory : [
-                { humans: 0, payloads: 0, battery: 96, alt: 0 },
-                { humans: humanCount, payloads: telemetry.delivered, battery: telemetry.batt, alt: telemetry.alt }
-              ];
-              const plotW = canvas.width - 70;
-              const plotH = canvas.height - 65;
-              const startX = 45;
-              const startY = 35;
-
-              // Battery line (blue)
-              ctx.strokeStyle = '#3b82f6';
-              ctx.lineWidth = 2;
-              ctx.beginPath();
-              points.forEach((pt, i) => {
-                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
-                const py = startY + plotH - (Math.max(0, Math.min(100, pt.battery)) / 100) * plotH;
-                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-              });
-              ctx.stroke();
-
-              // Humans line (green)
-              ctx.strokeStyle = '#10b981';
-              ctx.lineWidth = 2.5;
-              ctx.beginPath();
-              points.forEach((pt, i) => {
-                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
-                const py = startY + plotH - (Math.max(0, Math.min(10, pt.humans)) / 10) * plotH;
-                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-              });
-              ctx.stroke();
-
-              // Payloads line (orange)
-              ctx.strokeStyle = '#f45b0b';
-              ctx.lineWidth = 2.5;
-              ctx.beginPath();
-              points.forEach((pt, i) => {
-                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
-                const py = startY + plotH - (Math.max(0, Math.min(10, pt.payloads)) / 10) * plotH;
-                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-              });
-              ctx.stroke();
-
-              // Altitude line (purple)
-              ctx.strokeStyle = '#a855f7';
-              ctx.lineWidth = 1.8;
-              ctx.beginPath();
-              points.forEach((pt, i) => {
-                const px = startX + (i / Math.max(1, points.length - 1)) * plotW;
-                const py = startY + plotH - (Math.max(0, Math.min(100, pt.alt)) / 100) * plotH;
-                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-              });
-              ctx.stroke();
-
-              // Legend
-              ctx.font = '9.5px monospace';
-              ctx.fillStyle = '#10b981'; ctx.fillText('● HUMANS (0-10)', canvas.width - 400, 20);
-              ctx.fillStyle = '#f45b0b'; ctx.fillText('● PAYLOADS (0-10)', canvas.width - 280, 20);
-              ctx.fillStyle = '#3b82f6'; ctx.fillText('● BATT % (0-100)', canvas.width - 160, 20);
-              ctx.fillStyle = '#a855f7'; ctx.fillText('● ALT (m)', canvas.width - 65, 20);
-
-              const chartImg = canvas.toDataURL('image/png');
-              if (y > 215) { doc.addPage(); y = 15; }
-              doc.setFont('helvetica', 'bold');
-              doc.setFontSize(11);
-              doc.text('5. MISSION OPERATIONS & TELEMETRY TIMELINE GRAPH', 10, y);
-              y += 5;
-              doc.addImage(chartImg, 'PNG', 12, y, 186, 56);
-              y += 62;
-            }
-          } catch (e) {
-            console.warn('Could not embed chart in PDF:', e);
-          }
         }
 
         const pdfOutput = doc.output('datauristring');
@@ -1412,13 +1511,27 @@ export default function MissionDashboard() {
         {/* 2. MISSION KPI CARDS (2 -> 3 -> 6 Responsive Grid) */}
         <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
           {/* Battery */}
-          <div className="bg-[#202522]/90 border border-white/10 border-l-4 border-l-[#3b82f6] backdrop-blur-[24px] rounded-[8px] p-3 shadow-md flex flex-col justify-between">
-            <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-bold uppercase tracking-wider">
-              <span className="text-[#3b82f6]">{IC.battery}</span> BATTERY
+          <div 
+            onClick={() => setIsBatteryModalOpen(true)}
+            className="bg-[#202522]/90 border border-white/10 border-l-4 border-l-[#3b82f6] backdrop-blur-[24px] rounded-[8px] p-3 shadow-md flex flex-col justify-between cursor-pointer hover:border-white/20 hover:scale-[1.01] transition-all group"
+            title="Click to configure battery simulation & power management"
+          >
+            <div className="flex items-center justify-between text-white/50 text-[10px] font-bold uppercase tracking-wider">
+              <span className="flex items-center gap-1.5">
+                <span className="text-[#3b82f6]">{IC.battery}</span> BATTERY
+              </span>
+              <span className="text-[9px] text-[#3b82f6] opacity-60 group-hover:opacity-100 font-mono transition-opacity flex items-center gap-1">
+                ⚙ CONFIGURE
+              </span>
             </div>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="font-mono font-bold text-[18px] text-white">{telemetry.batt.toFixed(1)}%</span>
               <span className="text-[11px] font-mono text-white/50">{telemetry.voltage.toFixed(2)}V</span>
+              {isAutoDraining && (
+                <span className="text-[9px] font-mono text-[#ef4444] animate-pulse ml-auto bg-[#ef4444]/15 px-1.5 py-0.5 rounded border border-[#ef4444]/30">
+                  DRAINING...
+                </span>
+              )}
             </div>
           </div>
 
@@ -1821,6 +1934,453 @@ export default function MissionDashboard() {
                       className="py-1.5 px-3 rounded-[6px] bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-[10px] font-bold tracking-wider uppercase transition-all flex items-center gap-1 cursor-pointer"
                     >
                       <span>↺</span> RESET (0)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        )}
+
+        {/* ── BATTERY MANAGEMENT & SIMULATION POPUP MODAL ── */}
+        {isBatteryModalOpen && (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setIsBatteryModalOpen(false);
+            }}
+          >
+            <div className="w-full max-w-[560px] bg-[#161a1b] border border-white/15 rounded-[12px] p-5 shadow-[0_20px_50px_rgba(0,0,0,0.85)] space-y-4 max-h-[90vh] overflow-y-auto">
+              
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-[#3b82f6]/15 border border-[#3b82f6]/30 flex items-center justify-center text-[#3b82f6]">
+                    {IC.battery}
+                  </div>
+                  <div>
+                    <h3 className="text-[13px] font-bold text-white tracking-wide flex items-center gap-2">
+                      BATTERY & POWER MANAGEMENT
+                      {isAutoDraining && (
+                        <span className="text-[9px] font-mono text-[#ef4444] bg-[#ef4444]/15 border border-[#ef4444]/30 px-1.5 py-0.5 rounded animate-pulse">
+                          ● DRAINING (-{batteryDrainStep}% / {batteryDrainDelayMs}ms)
+                        </span>
+                      )}
+                      {telemetry.batt <= lowBatteryRthThreshold && (
+                        <span className="text-[9px] font-mono text-[#f59e0b] bg-[#f59e0b]/15 border border-[#f59e0b]/30 px-1.5 py-0.5 rounded animate-pulse">
+                          ⚠ RTH ACTIVE
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-[10px] font-mono text-white/50">
+                      MISSION {missionId} // POWER PROFILE: {batteryCellConfig} LiPo
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsBatteryModalOpen(false)}
+                  className="w-7 h-7 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Source Mode Toggle (Simulation vs Serial Console) */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-mono font-bold text-white/60 uppercase tracking-wider block">
+                  DATA SOURCE SELECTION
+                </span>
+                <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-[8px] border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatterySourceMode("SIMULATION");
+                      addActivityLog("SOURCE_SWITCH", "BATTERY POWER TELEMETRY SWITCHED TO SIMULATION MODE", "#3b82f6");
+                    }}
+                    className={`py-2 px-3 rounded-[6px] text-[11px] font-bold tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      batterySourceMode === "SIMULATION"
+                        ? "bg-[#3b82f6] text-white shadow-[0_2px_10px_rgba(59,130,246,0.4)]"
+                        : "text-white/60 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    <span>💻</span> SIMULATION
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatterySourceMode("SERIAL");
+                      setIsAutoDraining(false);
+                      addActivityLog("SOURCE_SWITCH", `BATTERY POWER TELEMETRY SWITCHED TO SERIAL COM CONSOLE (${selectedPort})`, "#f59e0b");
+                    }}
+                    className={`py-2 px-3 rounded-[6px] text-[11px] font-bold tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      batterySourceMode === "SERIAL"
+                        ? "bg-[#f59e0b] text-white shadow-[0_2px_10px_rgba(245,158,11,0.4)]"
+                        : "text-white/60 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    <span>🔌</span> SERIAL CONSOLE
+                  </button>
+                </div>
+              </div>
+
+              {/* Live Battery Gauge & Health Bar */}
+              <div className="bg-white/[0.03] border border-white/10 rounded-[8px] p-3 space-y-2">
+                <div className="flex items-center justify-between font-mono">
+                  <span className="text-[11px] text-white/60">MAIN BATTERY PACK RESERVE</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className={`text-xl font-bold ${
+                      telemetry.batt > 50 ? "text-[#10b981]" : telemetry.batt > 20 ? "text-[#f59e0b]" : "text-[#ef4444]"
+                    }`}>
+                      {telemetry.batt.toFixed(1)}%
+                    </span>
+                    <span className="text-[12px] text-white/60 font-mono">
+                      ({telemetry.voltage.toFixed(2)}V)
+                    </span>
+                  </div>
+                </div>
+
+                {/* Smooth Gradient Battery Progress Bar */}
+                <div className="w-full h-3 bg-black/60 rounded-full overflow-hidden border border-white/10 p-0.5">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      telemetry.batt > 50 
+                        ? "bg-gradient-to-r from-emerald-600 to-[#10b981]" 
+                        : telemetry.batt > 20 
+                        ? "bg-gradient-to-r from-amber-600 to-[#f59e0b]" 
+                        : "bg-gradient-to-r from-red-600 to-[#ef4444] animate-pulse"
+                    }`}
+                    style={{ width: `${Math.max(2, Math.min(100, telemetry.batt))}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* LiPo Cell Configuration & Individual Cell Voltage Monitor */}
+              <div className="bg-white/[0.02] border border-white/10 rounded-[8px] p-3 space-y-2.5 font-mono">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>🔋</span> LiPo CELL CONFIGURATION & VOLTAGE MONITOR
+                  </span>
+                  <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded border border-white/10 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBatteryCellConfig("4S");
+                        addActivityLog("CELL_CONFIG", "LiPo CELL PACK SWITCHED TO 4S (14.8V NOMINAL)", "#3b82f6");
+                      }}
+                      className={`px-2 py-0.5 rounded transition-all ${
+                        batteryCellConfig === "4S" ? "bg-[#3b82f6] text-white font-bold" : "text-white/50 hover:text-white"
+                      }`}
+                    >
+                      4S (14.8V)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBatteryCellConfig("6S");
+                        addActivityLog("CELL_CONFIG", "LiPo CELL PACK SWITCHED TO 6S (22.2V NOMINAL)", "#3b82f6");
+                      }}
+                      className={`px-2 py-0.5 rounded transition-all ${
+                        batteryCellConfig === "6S" ? "bg-[#3b82f6] text-white font-bold" : "text-white/50 hover:text-white"
+                      }`}
+                    >
+                      6S (22.2V)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Per-Cell Breakdown Bars */}
+                {(() => {
+                  const cellCount = batteryCellConfig === "6S" ? 6 : 4;
+                  const avgCellV = telemetry.voltage / cellCount;
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 pt-1">
+                      {Array.from({ length: cellCount }).map((_, cIdx) => {
+                        const cellV = parseFloat((avgCellV + (cIdx % 2 === 0 ? 0.01 : -0.01)).toFixed(2));
+                        const isGood = cellV >= 3.8;
+                        const isWarning = cellV >= 3.6 && cellV < 3.8;
+                        return (
+                          <div key={cIdx} className="bg-black/50 border border-white/5 rounded p-1.5 text-center">
+                            <div className="text-[9px] text-white/40">CELL #{cIdx + 1}</div>
+                            <div className={`text-[11px] font-bold ${
+                              isGood ? "text-[#10b981]" : isWarning ? "text-[#f59e0b]" : "text-[#ef4444]"
+                            }`}>
+                              {cellV}V
+                            </div>
+                            <div className="w-full h-1 bg-white/10 rounded-full mt-1 overflow-hidden">
+                              <div
+                                className={`h-full ${isGood ? "bg-[#10b981]" : isWarning ? "bg-[#f59e0b]" : "bg-[#ef4444]"}`}
+                                style={{ width: `${Math.min(100, Math.max(10, ((cellV - 3.2) / (4.2 - 3.2)) * 100))}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* SIMULATION MODE CONTROLS */}
+              {batterySourceMode === "SIMULATION" && (
+                <div className="space-y-3">
+                  {/* Option 1: Discharge Simulation with Configurable Drain Speed */}
+                  <div className="space-y-2 bg-white/[0.02] border border-white/10 rounded-[8px] p-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-mono font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                        <span>⏱</span> OPTION 1: DISCHARGE SIMULATION RATE
+                      </label>
+                      <span className="text-[10px] font-mono text-[#3b82f6] font-bold">
+                        {isFinite(batteryDrainDelayMs) ? `-${batteryDrainStep}% EVERY ${batteryDrainDelayMs}ms` : "MANUAL ONLY"}
+                      </span>
+                    </div>
+
+                    {/* Quick Delay Presets */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { label: "500ms (Rapid)", val: 500 },
+                        { label: "1000ms (1s)", val: 1000 },
+                        { label: "3000ms (3s)", val: 3000 },
+                        { label: "5000ms (5s)", val: 5000 },
+                        { label: "∞ MANUAL", val: Infinity },
+                      ].map(chip => (
+                        <button
+                          key={chip.label}
+                          type="button"
+                          onClick={() => {
+                            setBatteryDrainDelayMs(chip.val);
+                            if (isFinite(chip.val)) {
+                              setBatteryCustomDrainInput(chip.val.toString());
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-[5px] text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                            batteryDrainDelayMs === chip.val
+                              ? "bg-[#3b82f6] text-white shadow-[0_0_10px_rgba(59,130,246,0.4)]"
+                              : "bg-white/[0.05] hover:bg-white/[0.1] text-white/70 border border-white/5"
+                          }`}
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Custom Delay Input & Drain Step */}
+                    <div className="flex items-center gap-3 pt-1">
+                      <div className="flex-1 flex items-center gap-2">
+                        <span className="text-[10px] font-mono text-white/50">Interval:</span>
+                        <div className="relative flex-1">
+                          <input
+                            type="number"
+                            min={500}
+                            step={250}
+                            disabled={!isFinite(batteryDrainDelayMs)}
+                            value={isFinite(batteryDrainDelayMs) ? batteryCustomDrainInput : "MANUAL"}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBatteryCustomDrainInput(val);
+                              const parsed = parseInt(val, 10);
+                              if (!isNaN(parsed) && parsed >= 500) {
+                                setBatteryDrainDelayMs(parsed);
+                              }
+                            }}
+                            placeholder="Min 500"
+                            className="w-full bg-black/40 border border-white/10 rounded-[6px] px-2.5 py-1 text-[11px] font-mono text-white placeholder-white/30 outline-none focus:border-[#3b82f6] disabled:opacity-40"
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-mono text-white/40">
+                            ms
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Drain Step Selection */}
+                      <div className="flex items-center gap-1.5 font-mono">
+                        <span className="text-[10px] text-white/50">Step:</span>
+                        {[0.5, 1, 2, 5].map(stepVal => (
+                          <button
+                            key={stepVal}
+                            type="button"
+                            onClick={() => setBatteryDrainStep(stepVal)}
+                            className={`px-1.5 py-1 rounded text-[10px] font-bold ${
+                              batteryDrainStep === stepVal
+                                ? "bg-[#3b82f6] text-white"
+                                : "bg-white/5 text-white/60 hover:text-white"
+                            }`}
+                          >
+                            {stepVal}%
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Option 2: Manual Battery Percentage Slider & Quick Presets */}
+                  <div className="space-y-2 bg-white/[0.02] border border-white/10 rounded-[8px] p-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-mono font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                        <span>🎚</span> OPTION 2: MANUAL BATTERY SLIDER & QUICK PRESETS
+                      </label>
+                      <span className="text-[10px] font-mono text-[#10b981] font-bold">
+                        SET: {telemetry.batt.toFixed(1)}%
+                      </span>
+                    </div>
+
+                    {/* Interactive Range Slider */}
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={0.5}
+                      value={telemetry.batt}
+                      onChange={(e) => handleSetBatteryPercentage(parseFloat(e.target.value))}
+                      className="w-full accent-[#3b82f6] cursor-pointer"
+                    />
+
+                    {/* Quick Level Presets */}
+                    <div className="grid grid-cols-4 gap-1.5 pt-1">
+                      {[
+                        { label: "100% FULL", val: 100, color: "text-[#10b981]" },
+                        { label: "50% NOMINAL", val: 50, color: "text-[#3b82f6]" },
+                        { label: "20% WARNING", val: 20, color: "text-[#f59e0b]" },
+                        { label: "10% CRITICAL", val: 10, color: "text-[#ef4444]" },
+                      ].map(preset => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => handleSetBatteryPercentage(preset.val)}
+                          className={`py-1 rounded-[5px] text-[10px] font-mono font-bold bg-white/[0.05] hover:bg-white/[0.1] border border-white/5 transition-all cursor-pointer ${preset.color}`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Option 3: Low-Battery Warning & RTH Failsafe Threshold */}
+                  <div className="space-y-2 bg-white/[0.02] border border-white/10 rounded-[8px] p-3 font-mono">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                        <span>🚨</span> OPTION 3: LOW-BATTERY RTH FAILSAFE TRIGGER
+                      </label>
+                      <span className="text-[10px] text-[#ef4444] font-bold">
+                        THRESHOLD: {lowBatteryRthThreshold}%
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1">
+                        {[15, 20, 25, 30].map(th => (
+                          <button
+                            key={th}
+                            type="button"
+                            onClick={() => {
+                              setLowBatteryRthThreshold(th);
+                              addActivityLog("RTH_CONFIG", `LOW BATTERY RTH FAILSAFE THRESHOLD SET TO ${th}%`, "#f59e0b");
+                            }}
+                            className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${
+                              lowBatteryRthThreshold === th
+                                ? "bg-[#ef4444] text-white shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+                                : "bg-white/5 text-white/60 hover:text-white"
+                            }`}
+                          >
+                            {th}%
+                          </button>
+                        ))}
+                      </div>
+
+                      <span className="text-[9px] text-white/40 max-w-[240px] text-right truncate">
+                        Auto-triggers RTH failsafe audit log upon drop
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Actions & Trigger Buttons */}
+                  <div className="grid grid-cols-3 gap-2 pt-1 font-mono">
+                    {/* Start / Pause Auto Drain */}
+                    <button
+                      type="button"
+                      disabled={!isFinite(batteryDrainDelayMs) || telemetry.batt <= 0}
+                      onClick={() => {
+                        if (isAutoDraining) {
+                          setIsAutoDraining(false);
+                          addActivityLog("BATT_PAUSE", "BATTERY DISCHARGE SIMULATION PAUSED", "#f59e0b");
+                        } else {
+                          setIsAutoDraining(true);
+                          addActivityLog(
+                            "BATT_START",
+                            `BATTERY DISCHARGE SIMULATION ACTIVE: -${batteryDrainStep}% EVERY ${batteryDrainDelayMs}ms`,
+                            "#3b82f6"
+                          );
+                        }
+                      }}
+                      className={`py-2 px-3 rounded-[6px] text-[11px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md disabled:opacity-40 disabled:cursor-not-allowed ${
+                        isAutoDraining
+                          ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-900/30"
+                          : "bg-[#3b82f6] hover:bg-[#2563eb] text-white shadow-blue-900/30"
+                      }`}
+                    >
+                      {isAutoDraining ? "⏸ PAUSE" : "▶ START DRAIN"}
+                    </button>
+
+                    {/* Quick Recharge (+10%) */}
+                    <button
+                      type="button"
+                      disabled={telemetry.batt >= 100}
+                      onClick={() => handleSetBatteryPercentage(telemetry.batt + 10)}
+                      className="py-2 px-3 rounded-[6px] bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-white text-[11px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <span>⚡</span> RECHARGE (+10%)
+                    </button>
+
+                    {/* Reset Button (100% Full) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAutoDraining(false);
+                        handleSetBatteryPercentage(100);
+                        setRthTriggered(false);
+                        addActivityLog("BATT_RESET", "BATTERY RECHARGED TO 100.0% FULL CAPACITY", "#10b981");
+                      }}
+                      className="py-2 px-3 rounded-[6px] bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <span>↺</span> FULL (100%)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* SERIAL CONSOLE MODE DETAILS */}
+              {batterySourceMode === "SERIAL" && (
+                <div className="space-y-3 bg-white/[0.02] border border-white/10 rounded-[8px] p-3 font-mono">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-white/60">ACTIVE SERIAL PORT:</span>
+                    <span className="text-[#f59e0b] font-bold">{selectedPort} (115200 BAUD)</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 text-[10px] text-[#10b981] bg-[#10b981]/10 border border-[#10b981]/30 p-2 rounded-[6px]">
+                    <div className="w-2 h-2 rounded-full bg-[#10b981] animate-ping" />
+                    <span>LISTENING FOR HARDWARE BATTERY TELEMETRY (VOLTAGE/PERCENT)</span>
+                  </div>
+
+                  <div className="text-[10px] text-white/50 space-y-1">
+                    <p>• Flight Controller MAVLink / NMEA battery packets automatically update pack voltage and reserve.</p>
+                    <p>• Active Voltage Reading: {telemetry.voltage.toFixed(2)}V | Reserve: {telemetry.batt.toFixed(1)}%</p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleSetBatteryPercentage(100)}
+                      className="py-1.5 px-3 rounded-[6px] bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-white text-[10px] font-bold tracking-wider uppercase transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>⚡</span> MANUAL FULL OVERRIDE (100%)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetBatteryPercentage(20)}
+                      className="py-1.5 px-3 rounded-[6px] bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-[10px] font-bold tracking-wider uppercase transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>⚠</span> TEST RTH THRESHOLD (20%)
                     </button>
                   </div>
                 </div>
