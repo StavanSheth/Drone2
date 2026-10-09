@@ -865,7 +865,12 @@ export default function MissionDashboard() {
       rawTerminalRef.current.scrollTop = rawTerminalRef.current.scrollHeight;
     }
     if (osdTerminalRef.current) {
-      osdTerminalRef.current.scrollTop = osdTerminalRef.current.scrollHeight;
+      const el = osdTerminalRef.current;
+      // Do not yank scroll down if user scrolled up to read earlier logs
+      const isScrolledUp = el.scrollHeight - el.scrollTop - el.clientHeight > 45;
+      if (!isScrolledUp) {
+        el.scrollTop = el.scrollHeight;
+      }
     }
   }, [rawSerialLogs, osdLogs]);
 
@@ -3855,17 +3860,31 @@ export default function MissionDashboard() {
             </div>
 
             {/* 11. FEED CONSOLE CARD */}
-            <div className="w-full bg-[#0c0e10] border border-white/10 rounded-[8px] p-3 shadow-md flex flex-col min-h-[200px]">
+            <div className="w-full bg-[#0c0e10] border border-white/10 rounded-[8px] p-3 shadow-md flex flex-col min-h-[220px]">
               <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
                 <span className="text-[10px] font-mono font-bold text-white/80 flex items-center gap-1.5">
                   <span className="text-[#3b82f6]">◔</span> FEED CONSOLE
                 </span>
-                <span className="text-[9px] font-mono text-white/40">AUTO-SYNC</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-mono text-white/40">{osdLogs.length} LOGS</span>
+                  <span className="text-[9px] font-mono text-[#3b82f6] bg-[#3b82f6]/10 px-1.5 py-0.5 rounded border border-[#3b82f6]/30">
+                    AUTO-SYNC
+                  </span>
+                </div>
               </div>
-              <div ref={osdTerminalRef} className="flex-1 overflow-y-auto font-mono text-[10px] space-y-1 text-white/70 h-32 pr-1">
-                {osdLogs.map((line, idx) => (
-                  <div key={idx} className="text-white/70">{line}</div>
-                ))}
+              <div 
+                ref={osdTerminalRef} 
+                className="feed-console-scroll flex-1 font-mono text-[10px] space-y-1 text-white/70 h-44 max-h-56 pr-2 overflow-y-scroll select-text"
+              >
+                {osdLogs.length > 0 ? (
+                  osdLogs.map((line, idx) => (
+                    <div key={idx} className="text-white/75 hover:text-white hover:bg-white/[0.03] px-1 rounded transition-colors break-all">
+                      {line}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-white/30 italic py-2">Awaiting OCR feed console streams...</div>
+                )}
               </div>
             </div>
 
