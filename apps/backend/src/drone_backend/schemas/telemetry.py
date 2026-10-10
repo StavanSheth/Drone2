@@ -25,3 +25,5 @@ class OSDLogsResponse(BaseModel):
     percentage: Optional[float] = None
     lat: Optional[float] = None
     lon: Optional[float] = None
+    alt: Optional[float] = None
+    speed: Optional[float] = None

@@ -12,9 +12,11 @@ except ImportError:
     YOLO = None
 
 _ocr_engine = None
-_last_voltage = 21.6
+_last_voltage = 20.9
 _last_lat = 0.0
 _last_lon = 0.0
+_last_alt = 0.4
+_last_speed = 0.0
 _last_osd_lines: List[str] = []
 
 def get_ocr_engine():
@@ -69,12 +71,14 @@ def calculate_battery_percentage(voltage: Optional[float]) -> float:
     return round(percentage, 1)
 
 def extract_telemetry(frame: np.ndarray) -> Dict[str, Any]:
-    global _last_voltage, _last_lat, _last_lon, _last_osd_lines
+    global _last_voltage, _last_lat, _last_lon, _last_alt, _last_speed, _last_osd_lines
     data = {
         "voltage": _last_voltage,
         "percentage": calculate_battery_percentage(_last_voltage),
         "lat": _last_lat,
         "lon": _last_lon,
+        "alt": _last_alt,
+        "speed": _last_speed,
     }
 
     ocr = get_ocr_engine()
@@ -83,42 +87,41 @@ def extract_telemetry(frame: np.ndarray) -> Dict[str, Any]:
 
     try:
         h, w = frame.shape[:2]
-        # Crop bottom-right quadrant where battery voltage and lat/long OSD are located
-        roi = frame[int(h * 0.55):h, int(w * 0.55):w]
-        result, _ = ocr(roi)
-        if not result:
-            return data
-
         detected_lines: List[str] = []
+
+        # 1. Bottom-Right ROI: Battery Voltage and GPS
+        right_roi = frame[int(h * 0.55):h, int(w * 0.55):w]
+        res_right, _ = ocr(right_roi)
+
         parsed_voltage: Optional[float] = None
         parsed_lat: Optional[float] = None
         parsed_lon: Optional[float] = None
 
-        # Sort detected text boxes from top to bottom
-        sorted_items = sorted(result, key=lambda x: min(pt[1] for pt in x[0]))
-        for box, text, score in sorted_items:
-            ascii_text = ''.join(c for c in text if ord(c) < 128).strip()
-            clean = ascii_text.replace('o', '0').replace('O', '0').strip()
-            if not clean:
-                continue
-
-            # Check for voltage e.g. "21.6", "21.6 Volt", "21.6V"
-            v_match = re.search(r'(\d{1,2}\.\d{1,2})', clean)
-            if v_match and parsed_voltage is None:
-                v_val = float(v_match.group(1))
-                if 10.0 <= v_val <= 30.0:
-                    parsed_voltage = v_val
+        if res_right:
+            sorted_items = sorted(res_right, key=lambda x: min(pt[1] for pt in x[0]))
+            for box, text, score in sorted_items:
+                ascii_text = ''.join(c for c in text if ord(c) < 128).strip()
+                clean = ascii_text.replace('o', '0').replace('O', '0').strip()
+                if not clean:
                     continue
 
-            # Check for GPS coordinates (e.g. 0.0000000, 17.558500, 78.395900)
-            coord_str = re.sub(r'^[Il1|](0\.\d+)', r'\1', clean)
-            coord_match = re.search(r'(-?\d{1,3}\.\d{4,8})', coord_str)
-            if coord_match:
-                coord_val = float(coord_match.group(1))
-                if parsed_lat is None:
-                    parsed_lat = coord_val
-                elif parsed_lon is None:
-                    parsed_lon = coord_val
+                # Check for voltage e.g. "20.9", "20.9 Volt", "20.9V"
+                v_match = re.search(r'(\d{1,2}\.\d{1,2})', clean)
+                if v_match and parsed_voltage is None:
+                    v_val = float(v_match.group(1))
+                    if 10.0 <= v_val <= 30.0:
+                        parsed_voltage = v_val
+                        continue
+
+                # Check for GPS coordinates (e.g. 0.0000000, 17.558500, 78.395900)
+                coord_str = re.sub(r'^[Il1|](0\.\d+)', r'\1', clean)
+                coord_match = re.search(r'(-?\d{1,3}\.\d{4,8})', coord_str)
+                if coord_match:
+                    coord_val = float(coord_match.group(1))
+                    if parsed_lat is None:
+                        parsed_lat = coord_val
+                    elif parsed_lon is None:
+                        parsed_lon = coord_val
 
         if parsed_voltage is not None:
             _last_voltage = parsed_voltage
@@ -137,6 +140,48 @@ def extract_telemetry(frame: np.ndarray) -> Dict[str, Any]:
             detected_lines.append(f"[OSD] GPS: LAT {parsed_lat:.6f} | LON {parsed_lon:.6f}")
         elif parsed_lat is not None:
             detected_lines.append(f"[OSD] LAT: {parsed_lat:.6f}")
+
+        # 2. Left Middle-to-Bottom ROI: Speed and Altitude
+        left_roi = frame[int(h * 0.55):int(h * 0.95), 0:int(w * 0.30)]
+        res_left, _ = ocr(left_roi)
+
+        parsed_alt: Optional[float] = None
+        parsed_speed: Optional[float] = None
+
+        if res_left:
+            sorted_left = sorted(res_left, key=lambda x: min(pt[1] for pt in x[0]))
+            for box, text, score in sorted_left:
+                ascii_text = ''.join(c for c in text if ord(c) < 128).strip()
+                clean = ascii_text.replace('o', '0').replace('O', '0').strip()
+                if not clean or ':' in clean:
+                    continue
+
+                spd_match = re.search(r'(\d{1,3}(?:\.\d{1,2})?)\s*(?:km/?h|kph|m/?s)?', clean, re.IGNORECASE)
+                alt_match = re.search(r'(\d{1,3}(?:\.\d{1,2})?)\s*(?:m|M)?', clean)
+
+                if 'km' in clean.lower() or 'kph' in clean.lower():
+                    if spd_match:
+                        parsed_speed = float(spd_match.group(1))
+                    elif '-' in clean:
+                        parsed_speed = 0.0
+
+                if alt_match and parsed_alt is None:
+                    val = float(alt_match.group(1))
+                    if 0.0 <= val <= 1000.0:
+                        parsed_alt = val
+
+            if parsed_speed is None:
+                parsed_speed = 0.0
+
+        if parsed_alt is not None:
+            _last_alt = parsed_alt
+            data["alt"] = parsed_alt
+            detected_lines.append(f"[OSD] ALT: {parsed_alt:.1f}m")
+
+        if parsed_speed is not None:
+            _last_speed = parsed_speed
+            data["speed"] = parsed_speed
+            detected_lines.append(f"[OSD] SPD: {parsed_speed:.1f} km/h")
 
         if detected_lines:
             _last_osd_lines = detected_lines

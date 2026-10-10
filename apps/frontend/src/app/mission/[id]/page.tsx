@@ -861,6 +861,20 @@ export default function MissionDashboard() {
             }));
             setGpsPrioritySource("OCR");
           }
+
+          // 3. Sync Altitude & Ground Speed from Feed Console OCR
+          if (data.alt !== undefined && data.alt !== null) {
+            setTelemetry(prev => ({
+              ...prev,
+              alt: data.alt,
+            }));
+          }
+          if (data.speed !== undefined && data.speed !== null) {
+            setTelemetry(prev => ({
+              ...prev,
+              vel: data.speed,
+            }));
+          }
         }
       } catch {}
     }, 1000);
@@ -1063,6 +1077,19 @@ export default function MissionDashboard() {
             }));
             setGpsPrioritySource("OCR");
             updateResolvedGps(undefined, undefined, data.telemetry.lat, data.telemetry.lon);
+          }
+          // Update Altitude & Ground Speed from OCR
+          if (data.telemetry?.alt !== undefined && data.telemetry?.alt !== null) {
+            setTelemetry(prev => ({
+              ...prev,
+              alt: data.telemetry.alt,
+            }));
+          }
+          if (data.telemetry?.speed !== undefined && data.telemetry?.speed !== null) {
+            setTelemetry(prev => ({
+              ...prev,
+              vel: data.telemetry.speed,
+            }));
           }
           // Stream real-time OCR readings to Feed Console card
           if (Array.isArray(data.osd_text) && data.osd_text.length > 0) {
@@ -1669,6 +1696,12 @@ export default function MissionDashboard() {
               <span className="font-mono font-bold text-[18px] text-white">{telemetry.alt.toFixed(1)}m</span>
               <span className="text-[11px] font-mono text-white/40">MSL</span>
             </div>
+            <div className="flex items-center justify-between mt-1 pt-1 border-t border-white/5 text-[9px] font-mono">
+              <span className="text-white/40">SOURCE:</span>
+              <span className="text-[#3b82f6] bg-[#3b82f6]/10 px-1.5 py-0.5 rounded font-bold border border-[#3b82f6]/30">
+                ◔ FEED OCR
+              </span>
+            </div>
           </div>
 
           {/* Speed */}
@@ -1677,8 +1710,14 @@ export default function MissionDashboard() {
               <span className="text-white/60">{IC.compass}</span> SPEED
             </div>
             <div className="flex items-baseline gap-2 mt-1">
-              <span className="font-mono font-bold text-[18px] text-white">{telemetry.vel.toFixed(1)}m/s</span>
+              <span className="font-mono font-bold text-[18px] text-white">{telemetry.vel.toFixed(1)}km/h</span>
               <span className="text-[11px] font-mono text-white/40">GS</span>
+            </div>
+            <div className="flex items-center justify-between mt-1 pt-1 border-t border-white/5 text-[9px] font-mono">
+              <span className="text-white/40">SOURCE:</span>
+              <span className="text-[#3b82f6] bg-[#3b82f6]/10 px-1.5 py-0.5 rounded font-bold border border-[#3b82f6]/30">
+                ◔ FEED OCR
+              </span>
             </div>
           </div>
 
