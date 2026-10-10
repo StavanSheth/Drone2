@@ -503,7 +503,7 @@ function initThemeSwitch() {
 // --- Language Switch ---
 const translations = {
     en: {
-        brandName: "Trinetra",
+        brandName: "StatWing",
         flightTelemetry: "FLIGHT TELEMETRY",
         altitude: "ALT",
         speed: "SPD",

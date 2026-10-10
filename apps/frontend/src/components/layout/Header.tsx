@@ -8,7 +8,7 @@ export const Header = () => {
       <div className="flex items-center gap-3">
         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
         <span className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-          Trinetra Tactical Command
+          StatWing Tactical Command
         </span>
       </div>
       <div className="flex items-center gap-4">

@@ -57,7 +57,7 @@ export default function Sidebar() {
                </div>
                <div>
                  <h1 className="text-[15px] font-bold tracking-tight text-white leading-tight">
-                   Trinetra Sys
+                   StatWing Sys
                  </h1>
                  <p className="text-[10px] text-white/50 font-normal leading-none">
                    Tactical Command

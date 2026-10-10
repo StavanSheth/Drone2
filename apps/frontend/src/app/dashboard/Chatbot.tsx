@@ -20,7 +20,7 @@ const IC: Record<string, ReactNode> = {
 export default function Chatbot() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([
-    { id: "1", role: "assistant", content: "Hello Stavan Sheth. I am Trinetra AI. How can I assist with your drone operations today?" }
+    { id: "1", role: "assistant", content: "Hello Stavan Sheth. I am StatWing AI. How can I assist with your drone operations today?" }
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -118,7 +118,7 @@ export default function Chatbot() {
       setMessages(prev => [...prev, { 
         id: Date.now().toString(), 
         role: "assistant", 
-        content: "Error: Could not connect to Trinetra AI Core. Please ensure the backend and Ollama are running." 
+        content: "Error: Could not connect to StatWing AI Core. Please ensure the backend and Ollama are running." 
       }]);
     } finally {
       setIsTyping(false);
@@ -307,7 +307,7 @@ export default function Chatbot() {
 `}</style>
 
       <div className="chat-header">
-        <h1 className="chat-h-title">Trinetra Intelligence</h1>
+        <h1 className="chat-h-title">StatWing Intelligence</h1>
         <div className="chat-h-status">
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
           AI Core Online
@@ -322,7 +322,7 @@ export default function Chatbot() {
             </div>
             {m.isThinking ? (
               <div className="thinking">
-                {IC.sparkles} Trinetra is thinking
+                {IC.sparkles} StatWing is thinking
                 <div className="think-dots">
                   <div className="think-dot" />
                   <div className="think-dot" />
@@ -342,7 +342,7 @@ export default function Chatbot() {
         <div className="chat-input-container">
           <input
             className="chat-input"
-            placeholder="Ask Trinetra to analyze mission data..."
+            placeholder="Ask StatWing to analyze mission data..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSend()}

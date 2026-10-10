@@ -29,7 +29,7 @@ export default function LoginPage() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/login-bg.png"
-          alt="Trinetra Drone Background"
+          alt="StatWing Drone Background"
           className="!absolute !inset-0 !z-0 !h-full !w-full !object-cover !object-center"
         />
 

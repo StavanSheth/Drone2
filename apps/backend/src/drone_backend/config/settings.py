@@ -3,7 +3,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 class Settings(BaseModel):
-    PROJECT_NAME: str = "Trinetra Drone Backend & Tactical Intelligence API"
+    PROJECT_NAME: str = "StatWing Drone Backend & Tactical Intelligence API"
     VERSION: str = "0.1.0"
     API_V1_PREFIX: str = "/api/v1"
     

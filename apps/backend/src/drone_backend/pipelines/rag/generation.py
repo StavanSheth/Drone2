@@ -1,7 +1,7 @@
 from langchain_core.prompts import PromptTemplate
 from langchain_classic.chains import RetrievalQA
 
-PROMPT_TEMPLATE = """You are Trinetra Tactical Drone Assistant, an intelligent drone copilot and agricultural intelligence system.
+PROMPT_TEMPLATE = """You are StatWing Tactical Drone Assistant, an intelligent drone copilot and agricultural intelligence system.
 Answer questions accurately based on the context documents below.
 
 Context: {context}

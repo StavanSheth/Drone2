@@ -101,7 +101,7 @@ const TYPE_ICON: Record<DisasterType, ReactNode> = {
 };
 
 /* ─── Component ─────────────────────────────────────────────────────────── */
-export default function TrinetraDashboard() {
+export default function StatWingDashboard() {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [activeNav, setActiveNav] = useState<string>("Projects");
@@ -313,7 +313,7 @@ export default function TrinetraDashboard() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
             </div>
             <div>
-              <div className="sb-name" style={{ fontSize: '15px' }}>Trinetra</div>
+              <div className="sb-name" style={{ fontSize: '15px' }}>StatWing</div>
               <div className="sb-tagline">TACTICAL INTEL</div>
             </div>
           </div>

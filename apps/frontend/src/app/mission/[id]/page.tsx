@@ -113,7 +113,8 @@ export default function MissionDashboard() {
 
   // Battery Management & Simulation State
   const [isBatteryModalOpen, setIsBatteryModalOpen] = useState<boolean>(false);
-  const [batterySourceMode, setBatterySourceMode] = useState<"SIMULATION" | "SERIAL">("SIMULATION");
+  const [batterySourceMode, setBatterySourceMode] = useState<"FEED_CONSOLE" | "SIMULATION" | "SERIAL">("FEED_CONSOLE");
+  const [ocrBatteryData, setOcrBatteryData] = useState<{voltage: number, percentage: number, timestamp: number}>({ voltage: 21.6, percentage: 50.0, timestamp: 0 });
   const [batteryStartPercentInput, setBatteryStartPercentInput] = useState<string>("100");
   const [batteryDrainDelayMs, setBatteryDrainDelayMs] = useState<number>(2000); // 500ms to Infinity
   const [batteryCustomDrainInput, setBatteryCustomDrainInput] = useState<string>("2000");
@@ -834,13 +835,20 @@ export default function MissionDashboard() {
             }
           }
 
-          // 1. Sync Battery with Feed Console OCR (Only when in SERIAL / Live Feed mode)
-          if (batterySourceModeRef.current === "SERIAL" && data.voltage != null) {
-            setTelemetry(prev => ({
-              ...prev,
+          // 1. Sync Battery with Feed Console OCR
+          if (data.voltage != null) {
+            setOcrBatteryData({
               voltage: data.voltage,
-              batt: data.percentage != null ? data.percentage : prev.batt,
-            }));
+              percentage: data.percentage != null ? data.percentage : 50.0,
+              timestamp: Date.now()
+            });
+            if (batterySourceModeRef.current === "FEED_CONSOLE") {
+              setTelemetry(prev => ({
+                ...prev,
+                voltage: data.voltage,
+                batt: data.percentage != null ? data.percentage : prev.batt,
+              }));
+            }
           }
 
           // 2. Sync Tactical GPS & UAV Coordinates with Feed Console OCR
@@ -1025,13 +1033,20 @@ export default function MissionDashboard() {
               ].slice(-50);
             });
           }
-          // Update battery telemetry from backend OCR (voltage & calculated percentage) only in SERIAL mode
-          if (batterySourceModeRef.current === "SERIAL" && data.telemetry?.voltage != null) {
-            setTelemetry(prev => ({
-              ...prev,
+          // Update battery telemetry from backend OCR (voltage & calculated percentage)
+          if (data.telemetry?.voltage != null) {
+            setOcrBatteryData({
               voltage: data.telemetry.voltage,
-              batt: data.telemetry.percentage != null ? data.telemetry.percentage : prev.batt
-            }));
+              percentage: data.telemetry.percentage != null ? data.telemetry.percentage : 50.0,
+              timestamp: Date.now()
+            });
+            if (batterySourceModeRef.current === "FEED_CONSOLE") {
+              setTelemetry(prev => ({
+                ...prev,
+                voltage: data.telemetry.voltage,
+                batt: data.telemetry.percentage != null ? data.telemetry.percentage : prev.batt
+              }));
+            }
           }
           // Update OCR GPS from bottom-right OSD
           if (
@@ -1130,7 +1145,7 @@ export default function MissionDashboard() {
         let y = 18;
         doc.setFont("helvetica", "bold");
         doc.setFontSize(16);
-        doc.text("TRINETRA TACTICAL INTELLIGENCE & RESCUE REPORT", 10, y);
+        doc.text("STATWING TACTICAL INTELLIGENCE & RESCUE REPORT", 10, y);
         y += 7;
         doc.setFontSize(8);
         doc.setFont("helvetica", "normal");
@@ -1385,7 +1400,7 @@ export default function MissionDashboard() {
         const newWindow = window.open();
         if (newWindow) {
           newWindow.document.write(
-            `<html><head><title>TRINETRA MISSION REPORT \u2014 ${missionId}</title></head>` +
+            `<html><head><title>STATWING MISSION REPORT \u2014 ${missionId}</title></head>` +
             `<body style="margin:0;background:#000;"><iframe src="${src}" style="width:100%;height:100vh;border:none;"></iframe></body></html>`
           );
           newWindow.document.close();
@@ -1419,7 +1434,7 @@ export default function MissionDashboard() {
         const newWindow = window.open();
         if (newWindow) {
           newWindow.document.write(
-            `<html><head><title>TRINETRA DECRYPTED IMAGE \u2014 ${missionId}</title></head>` +
+            `<html><head><title>STATWING DECRYPTED IMAGE \u2014 ${missionId}</title></head>` +
             `<body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh;">` +
             `<img src="${decryptedStr}" style="max-width:100%;max-height:100vh;object-fit:contain;"/>` +
             `</body></html>`
@@ -1473,7 +1488,7 @@ export default function MissionDashboard() {
             <div className="w-7 h-7 rounded-lg bg-[#ff6415]/15 border border-[#ff6415]/30 flex items-center justify-center text-[#ff6415]">
               {IC.shield}
             </div>
-            <span>Trinetra</span>
+            <span>StatWing</span>
           </div>
           <div className="h-5 w-px bg-white/10" />
           <div className="flex flex-col">
@@ -1593,6 +1608,19 @@ export default function MissionDashboard() {
                   DRAINING...
                 </span>
               )}
+            </div>
+            {/* Live Source Indicator */}
+            <div className="flex items-center justify-between mt-1 pt-1 border-t border-white/5 text-[9px] font-mono">
+              <span className="text-white/40">SOURCE:</span>
+              <span className={`px-1.5 py-0.5 rounded font-bold ${
+                batterySourceMode === "FEED_CONSOLE"
+                  ? "text-[#3b82f6] bg-[#3b82f6]/10 border border-[#3b82f6]/30"
+                  : batterySourceMode === "SERIAL"
+                  ? "text-[#f59e0b] bg-[#f59e0b]/10 border border-[#f59e0b]/30"
+                  : "text-[#10b981] bg-[#10b981]/10 border border-[#10b981]/30"
+              }`}>
+                {batterySourceMode === "FEED_CONSOLE" ? "◔ FEED CONSOLE" : batterySourceMode === "SERIAL" ? "🔌 COM SERIAL" : "💻 SIMULATION"}
+              </span>
             </div>
           </div>
 
@@ -2048,21 +2076,43 @@ export default function MissionDashboard() {
                 </button>
               </div>
 
-              {/* Source Mode Toggle (Simulation vs Serial Console) */}
+              {/* Source Mode Toggle (Feed Console vs Simulation vs Serial Console) */}
               <div className="space-y-1.5">
                 <span className="text-[10px] font-mono font-bold text-white/60 uppercase tracking-wider block">
                   DATA SOURCE SELECTION
                 </span>
-                <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-[8px] border border-white/10">
+                <div className="grid grid-cols-3 gap-2 bg-black/40 p-1 rounded-[8px] border border-white/10 font-mono">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatterySourceMode("FEED_CONSOLE");
+                      setIsAutoDraining(false);
+                      if (ocrBatteryData.voltage) {
+                        setTelemetry(prev => ({
+                          ...prev,
+                          voltage: ocrBatteryData.voltage,
+                          batt: ocrBatteryData.percentage,
+                        }));
+                      }
+                      addActivityLog("SOURCE_SWITCH", "BATTERY POWER TELEMETRY SYNCED TO LIVE FEED CONSOLE (OCR)", "#3b82f6");
+                    }}
+                    className={`py-2 px-1.5 rounded-[6px] text-[10px] font-bold tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      batterySourceMode === "FEED_CONSOLE"
+                        ? "bg-[#3b82f6] text-white shadow-[0_2px_10px_rgba(59,130,246,0.4)]"
+                        : "text-white/60 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    <span>◔</span> FEED CONSOLE
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
                       setBatterySourceMode("SIMULATION");
-                      addActivityLog("SOURCE_SWITCH", "BATTERY POWER TELEMETRY SWITCHED TO SIMULATION MODE", "#3b82f6");
+                      addActivityLog("SOURCE_SWITCH", "BATTERY POWER TELEMETRY SWITCHED TO SIMULATION MODE", "#10b981");
                     }}
-                    className={`py-2 px-3 rounded-[6px] text-[11px] font-bold tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    className={`py-2 px-1.5 rounded-[6px] text-[10px] font-bold tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                       batterySourceMode === "SIMULATION"
-                        ? "bg-[#3b82f6] text-white shadow-[0_2px_10px_rgba(59,130,246,0.4)]"
+                        ? "bg-[#10b981] text-white shadow-[0_2px_10px_rgba(16,185,129,0.4)]"
                         : "text-white/60 hover:text-white hover:bg-white/5"
                     }`}
                   >
@@ -2075,13 +2125,13 @@ export default function MissionDashboard() {
                       setIsAutoDraining(false);
                       addActivityLog("SOURCE_SWITCH", `BATTERY POWER TELEMETRY SWITCHED TO SERIAL COM CONSOLE (${selectedPort})`, "#f59e0b");
                     }}
-                    className={`py-2 px-3 rounded-[6px] text-[11px] font-bold tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    className={`py-2 px-1.5 rounded-[6px] text-[10px] font-bold tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                       batterySourceMode === "SERIAL"
                         ? "bg-[#f59e0b] text-white shadow-[0_2px_10px_rgba(245,158,11,0.4)]"
                         : "text-white/60 hover:text-white hover:bg-white/5"
                     }`}
                   >
-                    <span>🔌</span> SERIAL CONSOLE
+                    <span>🔌</span> SERIAL
                   </button>
                 </div>
               </div>
@@ -2290,6 +2340,19 @@ export default function MissionDashboard() {
                               {preset.label}
                             </button>
                           ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const feedVal = parseFloat((ocrBatteryData.percentage || 50).toFixed(1));
+                              handleSetBatteryPercentage(feedVal);
+                              setBatteryStartPercentInput(feedVal.toString());
+                              addActivityLog("BATT_MANUAL", `COPIED CURRENT FEED OCR ${feedVal}% INTO SIMULATION`, "#3b82f6");
+                            }}
+                            className="px-2 py-1 rounded text-[10px] font-bold transition-all cursor-pointer bg-[#3b82f6]/20 hover:bg-[#3b82f6]/30 text-[#60a5fa] border border-[#3b82f6]/40 flex items-center gap-1"
+                            title="Set starting percentage from current camera Feed Console OCR"
+                          >
+                            <span>◔</span> FEED OCR ({ocrBatteryData.percentage ? ocrBatteryData.percentage.toFixed(0) : 50}%)
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -2573,6 +2636,73 @@ export default function MissionDashboard() {
                       className="py-1.5 px-3 rounded-[6px] bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-[10px] font-bold tracking-wider uppercase transition-all flex items-center gap-1 cursor-pointer"
                     >
                       <span>⚠</span> TEST RTH THRESHOLD (20%)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* FEED CONSOLE OCR LIVE SYNC SECTION */}
+              {batterySourceMode === "FEED_CONSOLE" && (
+                <div className="space-y-3 bg-white/[0.02] border border-[#3b82f6]/30 rounded-[8px] p-3 font-mono shadow-[0_0_15px_rgba(59,130,246,0.1)]">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                    <span className="text-[10px] font-bold text-white/90 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="text-[#3b82f6]">◔</span> FEED CONSOLE OCR REAL-TIME SYNC
+                    </span>
+                    <span className="text-[9px] font-bold text-[#3b82f6] bg-[#3b82f6]/10 px-2 py-0.5 rounded border border-[#3b82f6]/30 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#3b82f6] animate-ping" />
+                      LIVE HUD OCR LINK
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="bg-black/40 border border-white/10 rounded p-2.5">
+                      <div className="text-[9px] text-white/50 uppercase">Extracted Pack Voltage</div>
+                      <div className="text-lg font-bold text-white mt-0.5">
+                        {ocrBatteryData.voltage ? `${ocrBatteryData.voltage.toFixed(2)}V` : `${telemetry.voltage.toFixed(2)}V`}
+                      </div>
+                      <div className="text-[8px] text-white/40 mt-0.5">Bottom-Right Camera HUD OCR</div>
+                    </div>
+                    <div className="bg-black/40 border border-white/10 rounded p-2.5">
+                      <div className="text-[9px] text-white/50 uppercase">Calculated Reserve</div>
+                      <div className="text-lg font-bold text-[#3b82f6] mt-0.5">
+                        {ocrBatteryData.percentage ? `${ocrBatteryData.percentage.toFixed(1)}%` : `${telemetry.batt.toFixed(1)}%`}
+                      </div>
+                      <div className="text-[8px] text-white/40 mt-0.5">Mapped to {batteryCellConfig} LiPo Profile</div>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-white/60 space-y-1 bg-black/20 p-2 rounded border border-white/5">
+                    <p>• Live battery percentage is read directly from the Feed Console OCR and synchronizes with Mission KPI in real-time.</p>
+                    <p>• Optical Character Recognition (RapidOCR) runs every video frame to parse voltage and reserve.</p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (ocrBatteryData.voltage) {
+                          setTelemetry(prev => ({
+                            ...prev,
+                            voltage: ocrBatteryData.voltage,
+                            batt: ocrBatteryData.percentage,
+                          }));
+                          addActivityLog("BATT_SYNC", `MANUAL SYNC: BATTERY FORCED TO FEED CONSOLE OCR (${ocrBatteryData.voltage.toFixed(2)}V / ${ocrBatteryData.percentage.toFixed(1)}%)`, "#3b82f6");
+                        }
+                      }}
+                      className="py-1.5 px-3 rounded-[6px] bg-[#3b82f6]/20 hover:bg-[#3b82f6]/30 border border-[#3b82f6]/40 text-[#60a5fa] text-[10px] font-bold tracking-wider uppercase transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>⚡</span> RE-SYNC FROM FEED CONSOLE NOW
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBatterySourceMode("SIMULATION");
+                        setBatteryStartPercentInput(telemetry.batt.toFixed(0));
+                        addActivityLog("SOURCE_SWITCH", "SWITCHED TO SIMULATION (INITIALIZED FROM FEED CONSOLE)", "#10b981");
+                      }}
+                      className="py-1.5 px-3 rounded-[6px] bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-white text-[10px] font-bold tracking-wider uppercase transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>📋</span> EDIT IN SIMULATION
                     </button>
                   </div>
                 </div>

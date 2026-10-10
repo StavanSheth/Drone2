@@ -1,7 +1,7 @@
 [project]
 name = "drone-platform"
 version = "0.1.0"
-description = "Trinetra Drone Tactical & Agricultural Intelligence Platform"
+description = "StatWing Drone Tactical & Agricultural Intelligence Platform"
 readme = "self_readme.md"
 requires-python = ">=3.10"
 dependencies = [

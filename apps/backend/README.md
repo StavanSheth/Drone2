@@ -1,4 +1,4 @@
-# Trinetra Drone Backend
+# StatWing Drone Backend
 
 High-performance FastAPI service providing:
 - Real-time ESP-NOW GPS telemetry processing.

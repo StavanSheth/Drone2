@@ -1,7 +1,7 @@
 [project]
 name = "drone-backend"
 version = "0.1.0"
-description = "FastAPI Backend for Trinetra Tactical Drone Platform"
+description = "FastAPI Backend for StatWing Tactical Drone Platform"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115.0",

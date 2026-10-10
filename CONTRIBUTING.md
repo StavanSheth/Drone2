@@ -1,4 +1,4 @@
-# Contributing to Trinetra Tactical Drone Platform
+# Contributing to StatWing Tactical Drone Platform
 
 Thank you for your interest in contributing!
 

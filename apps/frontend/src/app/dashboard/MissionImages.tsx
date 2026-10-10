@@ -274,7 +274,7 @@ function PaymentSidebar({
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function TrinetraMarketplace() {
+export default function StatWingMarketplace() {
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [purchaseItem, setPurchaseItem] = useState<Asset | null>(null);

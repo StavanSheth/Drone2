@@ -221,7 +221,7 @@ export default function ApiPricing() {
       <header className="pr-header">
         <h1 className="pr-title">Tactical API, Priced for Your Mission</h1>
         <p className="pr-sub">
-          Integrate Trinetra&apos;s UAV intelligence directly into your systems. Real-time telemetry, mission logs, and FLIR data — all via REST API.
+          Integrate StatWing&apos;s UAV intelligence directly into your systems. Real-time telemetry, mission logs, and FLIR data — all via REST API.
         </p>
       </header>
 
